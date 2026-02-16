@@ -1,5 +1,8 @@
 #pragma once
 
+#define ASIO_STANDALONE
+#define ASIO_NO_BOOST
+
 #include <atomic>
 #include <deque>
 #include <mutex>

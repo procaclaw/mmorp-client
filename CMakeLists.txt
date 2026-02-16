@@ -46,11 +46,19 @@ find_package_handle_standard_args(SFML
 find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
 
+# ASIO standalone (no Boost required)
+set(ASIO_STANDALONE ON)
+set(ASIO_NO_BOOST ON)
+
 FetchContent_Declare(
   asio
   GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
   GIT_TAG asio-1-30-2
 )
+
+# websocketpp - disable Boost, use ASIO
+set(WEBSOCKETPP_BUILD_TESTS OFF)
+set(WEBSOCKETPP_BUILD_EXAMPLES OFF)
 
 FetchContent_Declare(
   websocketpp
@@ -72,6 +80,9 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(asio websocketpp nlohmann_json cpp_httplib)
 
+# Pass ASIO_STANDALONE to websocketpp
+add_compile_definitions(ASIO_STANDALONE ASIO_NO_BOOST)
+
 add_executable(mmorp_client
   src/main.cpp
   src/GameClient.cpp
@@ -90,6 +101,7 @@ target_include_directories(mmorp_client PRIVATE
 
 target_compile_definitions(mmorp_client PRIVATE
   ASIO_STANDALONE
+  ASIO_NO_BOOST
 )
 
 target_link_libraries(mmorp_client PRIVATE

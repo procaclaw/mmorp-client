@@ -1,3 +1,5 @@
+#define ASIO_STANDALONE
+#define ASIO_NO_BOOST
 #include "WebSocketClient.hpp"
 
 #include <utility>
