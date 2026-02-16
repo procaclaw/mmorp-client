@@ -12,7 +12,7 @@
 
 class GameClient {
  public:
-  GameClient();
+  GameClient(std::string httpUrl, std::string wsUrl);
   void run();
 
  private:
@@ -46,6 +46,7 @@ class GameClient {
   Renderer3D renderer_;
   HttpAuthClient authClient_;
   WebSocketClient wsClient_;
+  std::string wsUrl_;
 
   ScreenState screen_ = ScreenState::Auth;
   AuthMode authMode_ = AuthMode::Login;

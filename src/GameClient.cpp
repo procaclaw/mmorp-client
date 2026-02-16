@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "nlohmann/json.hpp"
@@ -55,10 +56,11 @@ std::string maskPassword(const std::string& p) {
 }
 }  // namespace
 
-GameClient::GameClient()
+GameClient::GameClient(std::string httpUrl, std::string wsUrl)
     : window_(sf::VideoMode(1280, 720), "MMORPG SFML Client", sf::Style::Default,
               sf::ContextSettings(24, 8, 0, 2, 1)),
-      authClient_("http://localhost:8080") {
+      authClient_(std::move(httpUrl)),
+      wsUrl_(std::move(wsUrl)) {
   window_.setVerticalSyncEnabled(true);
 
   std::vector<std::string> fontCandidates = {
@@ -207,7 +209,7 @@ void GameClient::startWorldSession() {
   joinSent_ = false;
   moveBroadcastAccumulator_ = 0.0f;
 
-  if (!wsClient_.connect("ws://localhost:8080/v1/world/ws", jwt_)) {
+  if (!wsClient_.connect(wsUrl_, jwt_)) {
     statusText_ = wsClient_.lastStatus();
     return;
   }
