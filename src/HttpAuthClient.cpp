@@ -69,7 +69,7 @@ AuthResult HttpAuthClient::submit(const std::string& path, const std::string& us
   client.set_read_timeout(5, 0);
   client.set_write_timeout(5, 0);
 
-  json request{{"username", username}, {"password", password}};
+  json request{{"email", username}, {"password", password}};
   auto res = client.Post(path.c_str(), request.dump(), "application/json");
 
   if (!res) {
