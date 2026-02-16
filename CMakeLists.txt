@@ -10,7 +10,39 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
 
-find_package(SFML 2.5 COMPONENTS graphics window system REQUIRED)
+# Find SFML manually (for SFML 2.5.x compatibility)
+set(SFML_ROOT $ENV{SFML_ROOT})
+if(NOT SFML_ROOT)
+  set(SFML_ROOT "C:/SFML")
+endif()
+
+find_path(SFML_INCLUDE_DIR 
+  NAMES SFML/Graphics.hpp
+  PATHS ${SFML_ROOT}/include
+)
+
+find_library(SFML_GRAPHICS_LIBRARY 
+  NAMES sfml-graphics-2.5 sfml-graphics
+  PATHS ${SFML_ROOT}/lib
+)
+find_library(SFML_WINDOW_LIBRARY 
+  NAMES sfml-window-2.5 sfml-window
+  PATHS ${SFML_ROOT}/lib
+)
+find_library(SFML_SYSTEM_LIBRARY 
+  NAMES sfml-system-2.5 sfml-system
+  PATHS ${SFML_ROOT}/lib
+)
+
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(SFML 
+  DEFAULT_MSG 
+  SFML_INCLUDE_DIR 
+  SFML_GRAPHICS_LIBRARY 
+  SFML_WINDOW_LIBRARY 
+  SFML_SYSTEM_LIBRARY
+)
+
 find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
 
@@ -50,6 +82,7 @@ add_executable(mmorp_client
 
 target_include_directories(mmorp_client PRIVATE
   src
+  ${SFML_INCLUDE_DIR}
   ${asio_SOURCE_DIR}/asio/include
   ${websocketpp_SOURCE_DIR}
   ${cpp_httplib_SOURCE_DIR}
@@ -60,9 +93,9 @@ target_compile_definitions(mmorp_client PRIVATE
 )
 
 target_link_libraries(mmorp_client PRIVATE
-  SFML::Graphics
-  SFML::Window
-  SFML::System
+  ${SFML_GRAPHICS_LIBRARY}
+  ${SFML_WINDOW_LIBRARY}
+  ${SFML_SYSTEM_LIBRARY}
   OpenGL::GL
   nlohmann_json::nlohmann_json
   Threads::Threads
