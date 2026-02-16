@@ -8,7 +8,7 @@
 #include <vector>
 
 #include <websocketpp/client.hpp>
-#include <websocketpp/config/asio_client.hpp>
+#include <websocketpp/config/asio_no_tls_client.hpp>
 
 class WebSocketClient {
  public:
