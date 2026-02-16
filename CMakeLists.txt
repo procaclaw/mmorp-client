@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(mmorp_client LANGUAGES CXX)
 
+# For older dependencies compatibility
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
