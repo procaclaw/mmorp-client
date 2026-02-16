@@ -3,8 +3,9 @@
 #include <SFML/OpenGL.hpp>
 
 #include <algorithm>
-#include <array>
+#include <cstdlib>
 #include <optional>
+#include <vector>
 
 #include "nlohmann/json.hpp"
 
@@ -60,11 +61,28 @@ GameClient::GameClient()
       authClient_("http://localhost:8080") {
   window_.setVerticalSyncEnabled(true);
 
-  const std::array<std::string, 3> fontCandidates = {
-      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-      "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-      "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+  std::vector<std::string> fontCandidates = {
+      "assets/fonts/DejaVuSans.ttf",
+      "assets/fonts/FreeSans.ttf",
+      "fonts/DejaVuSans.ttf",
+      "fonts/FreeSans.ttf",
   };
+
+#if defined(_WIN32)
+  const char* windir = std::getenv("WINDIR");
+  const std::string windowsDir = (windir != nullptr) ? windir : "C:/Windows";
+  fontCandidates.push_back(windowsDir + "/Fonts/segoeui.ttf");
+  fontCandidates.push_back(windowsDir + "/Fonts/arial.ttf");
+  fontCandidates.push_back(windowsDir + "/Fonts/tahoma.ttf");
+#elif defined(__APPLE__)
+  fontCandidates.push_back("/System/Library/Fonts/Supplemental/Arial.ttf");
+  fontCandidates.push_back("/System/Library/Fonts/Supplemental/Helvetica.ttf");
+  fontCandidates.push_back("/Library/Fonts/Arial.ttf");
+#else
+  fontCandidates.push_back("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+  fontCandidates.push_back("/usr/share/fonts/dejavu/DejaVuSans.ttf");
+  fontCandidates.push_back("/usr/share/fonts/truetype/freefont/FreeSans.ttf");
+#endif
 
   for (const auto& path : fontCandidates) {
     if (font_.loadFromFile(path)) {
