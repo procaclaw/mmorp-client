@@ -161,6 +161,8 @@ target_include_directories(mmorp_client PRIVATE
 target_compile_definitions(mmorp_client PRIVATE
   ASIO_STANDALONE
   ASIO_NO_BOOST
+  _WEBSOCKETPP_CPP11_STL_
+  _WEBSOCKETPP_CPP11_RANDOM_DEVICE_
 )
 
 target_link_libraries(mmorp_client PRIVATE
