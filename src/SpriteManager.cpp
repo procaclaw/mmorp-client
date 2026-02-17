@@ -7,7 +7,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
+#include <queue>
 #include <string>
+#include <unordered_map>
 
 namespace {
 const std::string kTileGrass = "tile_grass";
@@ -93,6 +95,122 @@ bool hasTransparentPixels(const sf::Image& image) {
   }
   return false;
 }
+
+int colorDistanceSquared(const sf::Color& a, const sf::Color& b) {
+  const int dr = static_cast<int>(a.r) - static_cast<int>(b.r);
+  const int dg = static_cast<int>(a.g) - static_cast<int>(b.g);
+  const int db = static_cast<int>(a.b) - static_cast<int>(b.b);
+  return dr * dr + dg * dg + db * db;
+}
+
+bool applyBorderColorTransparency(sf::Image& image) {
+  const sf::Vector2u size = image.getSize();
+  const unsigned width = size.x;
+  const unsigned height = size.y;
+  if (width < 2 || height < 2) {
+    return false;
+  }
+
+  struct BucketStats {
+    std::uint64_t count = 0;
+    std::uint64_t r = 0;
+    std::uint64_t g = 0;
+    std::uint64_t b = 0;
+  };
+  std::unordered_map<unsigned, BucketStats> buckets;
+
+  const auto addToBucket = [&buckets](const sf::Color& color) {
+    const unsigned key = (static_cast<unsigned>(color.r >> 4) << 8) | (static_cast<unsigned>(color.g >> 4) << 4) |
+                         static_cast<unsigned>(color.b >> 4);
+    auto& stats = buckets[key];
+    ++stats.count;
+    stats.r += color.r;
+    stats.g += color.g;
+    stats.b += color.b;
+  };
+
+  for (unsigned x = 0; x < width; ++x) {
+    addToBucket(image.getPixel(x, 0));
+    addToBucket(image.getPixel(x, height - 1));
+  }
+  for (unsigned y = 1; y + 1 < height; ++y) {
+    addToBucket(image.getPixel(0, y));
+    addToBucket(image.getPixel(width - 1, y));
+  }
+
+  if (buckets.empty()) {
+    return false;
+  }
+
+  const auto dominantIt =
+      std::max_element(buckets.begin(), buckets.end(), [](const auto& lhs, const auto& rhs) { return lhs.second.count < rhs.second.count; });
+  if (dominantIt == buckets.end() || dominantIt->second.count == 0) {
+    return false;
+  }
+
+  const sf::Color keyColor(static_cast<sf::Uint8>(dominantIt->second.r / dominantIt->second.count),
+                           static_cast<sf::Uint8>(dominantIt->second.g / dominantIt->second.count),
+                           static_cast<sf::Uint8>(dominantIt->second.b / dominantIt->second.count), 255);
+  constexpr int kColorThresholdSquared = 24 * 24 * 3;
+
+  std::vector<sf::Uint8> visited(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), 0);
+  std::queue<std::pair<unsigned, unsigned>> queue;
+
+  const auto tryEnqueue = [&](unsigned x, unsigned y) {
+    const std::size_t index = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
+    if (visited[index] != 0) {
+      return;
+    }
+    if (colorDistanceSquared(image.getPixel(x, y), keyColor) > kColorThresholdSquared) {
+      return;
+    }
+    visited[index] = 1;
+    queue.emplace(x, y);
+  };
+
+  for (unsigned x = 0; x < width; ++x) {
+    tryEnqueue(x, 0);
+    tryEnqueue(x, height - 1);
+  }
+  for (unsigned y = 1; y + 1 < height; ++y) {
+    tryEnqueue(0, y);
+    tryEnqueue(width - 1, y);
+  }
+
+  while (!queue.empty()) {
+    const auto [x, y] = queue.front();
+    queue.pop();
+    if (x > 0) {
+      tryEnqueue(x - 1, y);
+    }
+    if (x + 1 < width) {
+      tryEnqueue(x + 1, y);
+    }
+    if (y > 0) {
+      tryEnqueue(x, y - 1);
+    }
+    if (y + 1 < height) {
+      tryEnqueue(x, y + 1);
+    }
+  }
+
+  std::size_t maskedPixels = 0;
+  for (unsigned y = 0; y < height; ++y) {
+    for (unsigned x = 0; x < width; ++x) {
+      const std::size_t index = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
+      if (visited[index] == 0) {
+        continue;
+      }
+      sf::Color color = image.getPixel(x, y);
+      color.a = 0;
+      image.setPixel(x, y, color);
+      ++maskedPixels;
+    }
+  }
+
+  const std::size_t totalPixels = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+  return maskedPixels > 0 && maskedPixels < totalPixels;
+}
 }  // namespace
 
 bool SpriteManager::initialize(const std::string& spritesDirectory) {
@@ -161,10 +279,18 @@ bool SpriteManager::loadTextureOrPlaceholder(const std::string& key, const std::
   if (std::filesystem::exists(fullPath)) {
     sf::Image image;
     if (image.loadFromFile(fullPath.string())) {
+      const bool sourceHasAlpha = hasTransparentPixels(image);
+      bool synthesizedTransparency = false;
+      if (!sourceHasAlpha) {
+        synthesizedTransparency = applyBorderColorTransparency(image);
+      }
       loadedFromDisk = texture.loadFromImage(image);
-      if (loadedFromDisk && !hasTransparentPixels(image)) {
+      if (loadedFromDisk && !sourceHasAlpha && !synthesizedTransparency) {
         std::cerr << "[SpriteManager] Loaded " << fileName
-                  << " with no transparent pixels detected; alpha channel may be missing.\n";
+                  << " with no transparent pixels detected; sprite background will render opaque.\n";
+      } else if (loadedFromDisk && !sourceHasAlpha && synthesizedTransparency) {
+        std::cerr << "[SpriteManager] Loaded " << fileName
+                  << " without alpha channel; synthesized transparency from border color.\n";
       }
     }
   }
