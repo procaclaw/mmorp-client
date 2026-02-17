@@ -96,6 +96,23 @@ bool hasTransparentPixels(const sf::Image& image) {
   return false;
 }
 
+bool forceImageOpaqueAlpha(sf::Image& image) {
+  const sf::Vector2u size = image.getSize();
+  bool changed = false;
+  for (unsigned y = 0; y < size.y; ++y) {
+    for (unsigned x = 0; x < size.x; ++x) {
+      sf::Color color = image.getPixel(x, y);
+      if (color.a == 255) {
+        continue;
+      }
+      color.a = 255;
+      image.setPixel(x, y, color);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 int colorDistanceSquared(const sf::Color& a, const sf::Color& b) {
   const int dr = static_cast<int>(a.r) - static_cast<int>(b.r);
   const int dg = static_cast<int>(a.g) - static_cast<int>(b.g);
@@ -218,10 +235,14 @@ bool SpriteManager::initialize(const std::string& spritesDirectory) {
   textures_.clear();
 
   bool allLoadedFromDisk = true;
-  allLoadedFromDisk &= loadTextureOrPlaceholder(kTileGrass, "grass.png", makeTileGrassPixels());
-  allLoadedFromDisk &= loadTextureOrPlaceholder(kTileWater, "water.png", makeTileWaterPixels());
-  allLoadedFromDisk &= loadTextureOrPlaceholder(kTileWall, "wall.png", makeTileWallPixels());
-  allLoadedFromDisk &= loadTextureOrPlaceholder(kTileForest, "forest.png", makeTileForestPixels());
+  allLoadedFromDisk &=
+      loadTextureOrPlaceholder(kTileGrass, "grass.png", makeTileGrassPixels(), kSpriteSize, kSpriteSize, false, true);
+  allLoadedFromDisk &=
+      loadTextureOrPlaceholder(kTileWater, "water.png", makeTileWaterPixels(), kSpriteSize, kSpriteSize, false, true);
+  allLoadedFromDisk &=
+      loadTextureOrPlaceholder(kTileWall, "wall.png", makeTileWallPixels(), kSpriteSize, kSpriteSize, false, true);
+  allLoadedFromDisk &= loadTextureOrPlaceholder(kTileForest, "forest.png", makeTileForestPixels(), kSpriteSize,
+                                                 kSpriteSize, false, true);
 
   allLoadedFromDisk &=
       loadTextureOrPlaceholder(kWarriorSheet, "warrior.png", makePlayerSheetPixels(), kSheetWidth, kSheetHeight);
@@ -271,7 +292,7 @@ const sf::Texture& SpriteManager::mobDead() const { return textures_.at(kMobDead
 
 bool SpriteManager::loadTextureOrPlaceholder(const std::string& key, const std::string& fileName,
                                              const std::vector<sf::Uint8>& fallbackPixels, unsigned width,
-                                             unsigned height) {
+                                             unsigned height, bool synthesizeBorderTransparency, bool forceOpaqueAlpha) {
   sf::Texture texture;
   const std::filesystem::path fullPath = std::filesystem::path(spritesDirectory_) / fileName;
 
@@ -279,16 +300,19 @@ bool SpriteManager::loadTextureOrPlaceholder(const std::string& key, const std::
   if (std::filesystem::exists(fullPath)) {
     sf::Image image;
     if (image.loadFromFile(fullPath.string())) {
-      const bool sourceHasAlpha = hasTransparentPixels(image);
+      const bool normalizedToOpaque = forceOpaqueAlpha ? forceImageOpaqueAlpha(image) : false;
+      const bool sourceHasTransparency = hasTransparentPixels(image);
       bool synthesizedTransparency = false;
-      if (!sourceHasAlpha) {
+      if (synthesizeBorderTransparency && !sourceHasTransparency) {
         synthesizedTransparency = applyBorderColorTransparency(image);
       }
       loadedFromDisk = texture.loadFromImage(image);
-      if (loadedFromDisk && !sourceHasAlpha && !synthesizedTransparency) {
+      if (loadedFromDisk && forceOpaqueAlpha && normalizedToOpaque) {
+        std::cerr << "[SpriteManager] Loaded " << fileName << " and normalized tile alpha to fully opaque.\n";
+      } else if (loadedFromDisk && !sourceHasTransparency && !synthesizedTransparency) {
         std::cerr << "[SpriteManager] Loaded " << fileName
                   << " with no transparent pixels detected; sprite background will render opaque.\n";
-      } else if (loadedFromDisk && !sourceHasAlpha && synthesizedTransparency) {
+      } else if (loadedFromDisk && !sourceHasTransparency && synthesizedTransparency) {
         std::cerr << "[SpriteManager] Loaded " << fileName
                   << " without alpha channel; synthesized transparency from border color.\n";
       }

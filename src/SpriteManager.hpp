@@ -51,7 +51,8 @@ class SpriteManager {
 
   bool loadTextureOrPlaceholder(const std::string& key, const std::string& fileName,
                                 const std::vector<sf::Uint8>& fallbackPixels, unsigned width = kSpriteSize,
-                                unsigned height = kSpriteSize);
+                                unsigned height = kSpriteSize, bool synthesizeBorderTransparency = true,
+                                bool forceOpaqueAlpha = false);
   static std::vector<sf::Uint8> makeTileGrassPixels();
   static std::vector<sf::Uint8> makeTileWaterPixels();
   static std::vector<sf::Uint8> makeTileWallPixels();
