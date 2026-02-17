@@ -46,6 +46,9 @@ void Renderer3D::render(sf::RenderTarget& target, const WorldSnapshot& world, co
     spritesInitialized_ = true;
   }
 
+  // Enable alpha blending for transparent sprites
+  target.setBlendMode(sf::BlendAlpha);
+
   sf::View worldView;
   worldView.setSize(static_cast<float>(viewportWidth_) * cameraZoom_, static_cast<float>(viewportHeight_) * cameraZoom_);
 
