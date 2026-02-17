@@ -24,7 +24,7 @@ struct ClassArchetype {
   const char* stats;
 };
 
-constexpr std::array<ClassArchetype, 3> kClassArchetypes{{
+const std::array<ClassArchetype, 3> kClassArchetypes{{
     {"Warrior", sf::Color(210, 72, 72), sf::Color(255, 180, 170), "Frontline fighter with high durability.",
      "HP: High   Attack: Medium   Magic: Low"},
     {"Mage", sf::Color(80, 125, 230), sf::Color(170, 205, 255), "Ranged spellcaster with burst damage.",
