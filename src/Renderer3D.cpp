@@ -8,25 +8,28 @@ float clamp01(float v) {
   return std::max(0.0f, std::min(1.0f, v));
 }
 
-int frameLeftForColumn(int column) {
-  return static_cast<int>(std::lround(static_cast<float>(column) * SpriteManager::kFrameWidth));
+int frameLeftForColumn(int column, unsigned textureWidth) {
+  const float frameWidth = static_cast<float>(textureWidth) / static_cast<float>(SpriteManager::kSheetColumns);
+  return static_cast<int>(std::lround(static_cast<float>(column) * frameWidth));
 }
 
-int frameTopForRow(int row) {
-  return static_cast<int>(std::lround(static_cast<float>(row) * SpriteManager::kFrameHeight));
+int frameTopForRow(int row, unsigned textureHeight) {
+  const float frameHeight = static_cast<float>(textureHeight) / static_cast<float>(SpriteManager::kSheetRows);
+  return static_cast<int>(std::lround(static_cast<float>(row) * frameHeight));
 }
 
-int frameWidthForColumn(int column) {
-  return std::max(1, frameLeftForColumn(column + 1) - frameLeftForColumn(column));
+int frameWidthForColumn(int column, unsigned textureWidth) {
+  return std::max(1, frameLeftForColumn(column + 1, textureWidth) - frameLeftForColumn(column, textureWidth));
 }
 
-int frameHeightForRow(int row) {
-  return std::max(1, frameTopForRow(row + 1) - frameTopForRow(row));
+int frameHeightForRow(int row, unsigned textureHeight) {
+  return std::max(1, frameTopForRow(row + 1, textureHeight) - frameTopForRow(row, textureHeight));
 }
 
-sf::IntRect spriteFrameRect(int column, int row) {
-  return sf::IntRect(frameLeftForColumn(column), frameTopForRow(row), frameWidthForColumn(column),
-                     frameHeightForRow(row));
+sf::IntRect spriteFrameRect(const sf::Texture& texture, int column, int row) {
+  const sf::Vector2u textureSize = texture.getSize();
+  return sf::IntRect(frameLeftForColumn(column, textureSize.x), frameTopForRow(row, textureSize.y),
+                     frameWidthForColumn(column, textureSize.x), frameHeightForRow(row, textureSize.y));
 }
 
 void drawName(sf::RenderTarget& target, const sf::Font* font, const std::string& name, sf::Vector2f center,
@@ -144,8 +147,9 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
 
     const sf::Vector2f center((npc.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (npc.renderY + 0.5f) * static_cast<float>(world.tileSize));
-    sprite.setTexture(spriteManager_.npcSheet());
-    const sf::IntRect frameRect = spriteFrameRect(animationColumn(moving), rowForDirection(direction));
+    const sf::Texture& npcSheet = spriteManager_.npcSheet();
+    sprite.setTexture(npcSheet);
+    const sf::IntRect frameRect = spriteFrameRect(npcSheet, animationColumn(moving), rowForDirection(direction));
     sprite.setTextureRect(frameRect);
     sprite.setOrigin(static_cast<float>(frameRect.width) * 0.5f, static_cast<float>(frameRect.height) * 0.5f);
     constexpr float npcSize = 22.0f;
@@ -165,8 +169,10 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
 
     const sf::Vector2f center((mob.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (mob.renderY + 0.5f) * static_cast<float>(world.tileSize));
-    sprite.setTexture(spriteManager_.mobSheet());
-    const sf::IntRect frameRect = spriteFrameRect(animationColumn(moving && mob.alive), rowForDirection(direction));
+    const sf::Texture& mobSheet = spriteManager_.mobSheet();
+    sprite.setTexture(mobSheet);
+    const sf::IntRect frameRect =
+        spriteFrameRect(mobSheet, animationColumn(moving && mob.alive), rowForDirection(direction));
     sprite.setTextureRect(frameRect);
     sprite.setOrigin(static_cast<float>(frameRect.width) * 0.5f, static_cast<float>(frameRect.height) * 0.5f);
     constexpr float mobSize = 20.0f;
@@ -191,8 +197,9 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
 
     const sf::Vector2f center((player.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (player.renderY + 0.5f) * static_cast<float>(world.tileSize));
-    sprite.setTexture(spriteManager_.playerSheet());
-    const sf::IntRect frameRect = spriteFrameRect(animationColumn(moving), rowForDirection(direction));
+    const sf::Texture& playerSheet = spriteManager_.playerSheet(player.className);
+    sprite.setTexture(playerSheet);
+    const sf::IntRect frameRect = spriteFrameRect(playerSheet, animationColumn(moving), rowForDirection(direction));
     sprite.setTextureRect(frameRect);
     sprite.setOrigin(static_cast<float>(frameRect.width) * 0.5f, static_cast<float>(frameRect.height) * 0.5f);
     constexpr float playerSize = 24.0f;

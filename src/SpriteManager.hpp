@@ -30,10 +30,12 @@ class SpriteManager {
   static constexpr unsigned kDeathFrameCount = 2;
   static constexpr unsigned kSheetWidth = 1408;
   static constexpr unsigned kSheetHeight = 768;
+  static constexpr unsigned kMonsterSheetHeight = 736;
 
   bool initialize(const std::string& spritesDirectory = "assets/sprites");
 
   const sf::Texture& tile(TileType tileType) const;
+  const sf::Texture& playerSheet(const std::string& className) const;
   const sf::Texture& playerSheet() const;
   const sf::Texture& npcSheet() const;
   const sf::Texture& mobSheet() const;

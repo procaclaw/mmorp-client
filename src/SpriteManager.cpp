@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cctype>
 #include <filesystem>
 #include <string>
 
@@ -11,10 +12,29 @@ const std::string kTileGrass = "tile_grass";
 const std::string kTileWater = "tile_water";
 const std::string kTileWall = "tile_wall";
 const std::string kTileForest = "tile_forest";
-const std::string kPlayerSheet = "player_sheet";
-const std::string kNpcSheet = "npc_sheet";
+const std::string kWarriorSheet = "warrior_sheet";
+const std::string kMageSheet = "mage_sheet";
+const std::string kRogieSheet = "rogie_sheet";
+const std::string kDefaultPlayerSheet = kWarriorSheet;
 const std::string kMobSheet = "mob_sheet";
 const std::string kMobDead = "mob_dead";
+
+std::string toLowerCopy(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
+const std::string& playerSheetKeyForClass(const std::string& className) {
+  const std::string normalized = toLowerCopy(className);
+  if (normalized == "mage" || normalized == "wizard" || normalized == "sorcerer") {
+    return kMageSheet;
+  }
+  if (normalized == "rogie" || normalized == "rogue" || normalized == "ranger" || normalized == "archer") {
+    return kRogieSheet;
+  }
+  return kWarriorSheet;
+}
 
 unsigned frameForColumn(unsigned col) {
   if (col >= SpriteManager::kWalkStartColumn &&
@@ -72,11 +92,13 @@ bool SpriteManager::initialize(const std::string& spritesDirectory) {
   allLoadedFromDisk &= loadTextureOrPlaceholder(kTileForest, "forest.png", makeTileForestPixels());
 
   allLoadedFromDisk &=
-      loadTextureOrPlaceholder(kPlayerSheet, "player_sheet.png", makePlayerSheetPixels(), kSheetWidth, kSheetHeight);
+      loadTextureOrPlaceholder(kWarriorSheet, "warrior.png", makePlayerSheetPixels(), kSheetWidth, kSheetHeight);
   allLoadedFromDisk &=
-      loadTextureOrPlaceholder(kNpcSheet, "npc_sheet.png", makeNpcSheetPixels(), kSheetWidth, kSheetHeight);
+      loadTextureOrPlaceholder(kMageSheet, "mage.png", makePlayerSheetPixels(), kSheetWidth, kSheetHeight);
   allLoadedFromDisk &=
-      loadTextureOrPlaceholder(kMobSheet, "mob_sheet.png", makeMobSheetPixels(), kSheetWidth, kSheetHeight);
+      loadTextureOrPlaceholder(kRogieSheet, "rogie.png", makePlayerSheetPixels(), kSheetWidth, kSheetHeight);
+  allLoadedFromDisk &=
+      loadTextureOrPlaceholder(kMobSheet, "monster.png", makeMobSheetPixels(), kSheetWidth, kMonsterSheetHeight);
 
   // Optional legacy sprite used when a mob dies.
   loadTextureOrPlaceholder(kMobDead, "mob_dead.png", makeMobPixels(false));
@@ -98,9 +120,18 @@ const sf::Texture& SpriteManager::tile(TileType tileType) const {
   return textures_.at(kTileGrass);
 }
 
-const sf::Texture& SpriteManager::playerSheet() const { return textures_.at(kPlayerSheet); }
+const sf::Texture& SpriteManager::playerSheet(const std::string& className) const {
+  const auto& key = playerSheetKeyForClass(className);
+  auto it = textures_.find(key);
+  if (it != textures_.end()) {
+    return it->second;
+  }
+  return textures_.at(kDefaultPlayerSheet);
+}
 
-const sf::Texture& SpriteManager::npcSheet() const { return textures_.at(kNpcSheet); }
+const sf::Texture& SpriteManager::playerSheet() const { return playerSheet("warrior"); }
+
+const sf::Texture& SpriteManager::npcSheet() const { return textures_.at(kMageSheet); }
 
 const sf::Texture& SpriteManager::mobSheet() const { return textures_.at(kMobSheet); }
 
