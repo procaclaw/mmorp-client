@@ -4,7 +4,9 @@
 #include <array>
 #include <cmath>
 #include <cctype>
+#include <cstdint>
 #include <filesystem>
+#include <iostream>
 #include <string>
 
 namespace {
@@ -79,6 +81,18 @@ unsigned frameHeight(unsigned frameY) {
   const unsigned bottom = frameTop(frameY + 1);
   return std::max(1u, bottom - top);
 }
+
+bool hasTransparentPixels(const sf::Image& image) {
+  const sf::Vector2u size = image.getSize();
+  for (unsigned y = 0; y < size.y; ++y) {
+    for (unsigned x = 0; x < size.x; ++x) {
+      if (image.getPixel(x, y).a < 255) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 }  // namespace
 
 bool SpriteManager::initialize(const std::string& spritesDirectory) {
@@ -145,7 +159,14 @@ bool SpriteManager::loadTextureOrPlaceholder(const std::string& key, const std::
 
   bool loadedFromDisk = false;
   if (std::filesystem::exists(fullPath)) {
-    loadedFromDisk = texture.loadFromFile(fullPath.string());
+    sf::Image image;
+    if (image.loadFromFile(fullPath.string())) {
+      loadedFromDisk = texture.loadFromImage(image);
+      if (loadedFromDisk && !hasTransparentPixels(image)) {
+        std::cerr << "[SpriteManager] Loaded " << fileName
+                  << " with no transparent pixels detected; alpha channel may be missing.\n";
+      }
+    }
   }
 
   if (!loadedFromDisk) {

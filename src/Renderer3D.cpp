@@ -205,7 +205,7 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
     constexpr float playerSize = 24.0f;
     const float playerScale = playerSize / static_cast<float>(frameRect.width);
     sprite.setScale(playerScale, playerScale);
-    sprite.setColor(isSelf ? sf::Color(255, 236, 122) : sf::Color(235, 235, 255));
+    sprite.setColor(sf::Color::White);
     sprite.setPosition(center);
     target.draw(sprite, states);
 
