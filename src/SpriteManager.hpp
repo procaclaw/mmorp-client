@@ -14,9 +14,18 @@ enum class SpriteSheetDirection : std::uint8_t { Front = 0, Left = 1, Diagonal =
 class SpriteManager {
  public:
   static constexpr unsigned kSpriteSize = 64;
-  static constexpr unsigned kSheetColumns = 10;
-  static constexpr unsigned kSheetRows = 4;
+  static constexpr unsigned kSheetColumns = 22;
+  static constexpr unsigned kSheetRows = 12;
+  static constexpr unsigned kIdleStartColumn = 0;
+  static constexpr unsigned kIdleFrameCount = 4;
+  static constexpr unsigned kWalkStartColumn = 4;
   static constexpr unsigned kWalkFrameCount = 6;
+  static constexpr unsigned kAttackStartColumn = 10;
+  static constexpr unsigned kAttackFrameCount = 6;
+  static constexpr unsigned kHurtStartColumn = 16;
+  static constexpr unsigned kHurtFrameCount = 4;
+  static constexpr unsigned kDeathStartColumn = 20;
+  static constexpr unsigned kDeathFrameCount = 2;
   static constexpr unsigned kSheetWidth = kSpriteSize * kSheetColumns;
   static constexpr unsigned kSheetHeight = kSpriteSize * kSheetRows;
 

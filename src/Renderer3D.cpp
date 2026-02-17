@@ -124,7 +124,7 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
     const sf::Vector2f center((npc.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (npc.renderY + 0.5f) * static_cast<float>(world.tileSize));
     sprite.setTexture(spriteManager_.npcSheet());
-    sprite.setTextureRect(sf::IntRect(animationFrame(moving) * static_cast<int>(SpriteManager::kSpriteSize),
+    sprite.setTextureRect(sf::IntRect(animationColumn(moving) * static_cast<int>(SpriteManager::kSpriteSize),
                                       rowForDirection(direction) * static_cast<int>(SpriteManager::kSpriteSize),
                                       static_cast<int>(SpriteManager::kSpriteSize),
                                       static_cast<int>(SpriteManager::kSpriteSize)));
@@ -148,7 +148,8 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
     const sf::Vector2f center((mob.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (mob.renderY + 0.5f) * static_cast<float>(world.tileSize));
     sprite.setTexture(spriteManager_.mobSheet());
-    sprite.setTextureRect(sf::IntRect(animationFrame(moving && mob.alive) * static_cast<int>(SpriteManager::kSpriteSize),
+    sprite.setTextureRect(
+        sf::IntRect(animationColumn(moving && mob.alive) * static_cast<int>(SpriteManager::kSpriteSize),
                                       rowForDirection(direction) * static_cast<int>(SpriteManager::kSpriteSize),
                                       static_cast<int>(SpriteManager::kSpriteSize),
                                       static_cast<int>(SpriteManager::kSpriteSize)));
@@ -177,7 +178,7 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
     const sf::Vector2f center((player.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (player.renderY + 0.5f) * static_cast<float>(world.tileSize));
     sprite.setTexture(spriteManager_.playerSheet());
-    sprite.setTextureRect(sf::IntRect(animationFrame(moving) * static_cast<int>(SpriteManager::kSpriteSize),
+    sprite.setTextureRect(sf::IntRect(animationColumn(moving) * static_cast<int>(SpriteManager::kSpriteSize),
                                       rowForDirection(direction) * static_cast<int>(SpriteManager::kSpriteSize),
                                       static_cast<int>(SpriteManager::kSpriteSize),
                                       static_cast<int>(SpriteManager::kSpriteSize)));
@@ -254,13 +255,15 @@ SpriteSheetDirection Renderer3D::resolveDirection(const std::string& id, float r
   return direction;
 }
 
-int Renderer3D::animationFrame(bool moving) const {
+int Renderer3D::animationColumn(bool moving) const {
   if (!moving) {
-    return 0;
+    return static_cast<int>(SpriteManager::kIdleStartColumn);
   }
 
   const auto elapsedMs = animationClock_.getElapsedTime().asMilliseconds();
-  return static_cast<int>((elapsedMs / kAnimationFrameMs) % static_cast<sf::Int64>(SpriteManager::kWalkFrameCount));
+  const auto frame = static_cast<int>((elapsedMs / kAnimationFrameMs) %
+                                      static_cast<sf::Int64>(SpriteManager::kWalkFrameCount));
+  return static_cast<int>(SpriteManager::kWalkStartColumn) + frame;
 }
 
 int Renderer3D::rowForDirection(SpriteSheetDirection direction) {

@@ -26,7 +26,7 @@ class Renderer3D {
   static bool isMoving(float dx, float dy);
   SpriteSheetDirection resolveDirection(const std::string& id, float renderX, float renderY, int gridX, int gridY,
                                         std::unordered_map<std::string, SpriteSheetDirection>& cache) const;
-  int animationFrame(bool moving) const;
+  int animationColumn(bool moving) const;
   static int rowForDirection(SpriteSheetDirection direction);
 
   int viewportWidth_ = 1280;

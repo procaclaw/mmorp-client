@@ -14,6 +14,30 @@ const std::string kPlayerSheet = "player_sheet";
 const std::string kNpcSheet = "npc_sheet";
 const std::string kMobSheet = "mob_sheet";
 const std::string kMobDead = "mob_dead";
+
+unsigned frameForColumn(unsigned col) {
+  if (col >= SpriteManager::kWalkStartColumn &&
+      col < SpriteManager::kWalkStartColumn + SpriteManager::kWalkFrameCount) {
+    return col - SpriteManager::kWalkStartColumn;
+  }
+  if (col >= SpriteManager::kIdleStartColumn &&
+      col < SpriteManager::kIdleStartColumn + SpriteManager::kIdleFrameCount) {
+    return col - SpriteManager::kIdleStartColumn;
+  }
+  if (col >= SpriteManager::kAttackStartColumn &&
+      col < SpriteManager::kAttackStartColumn + SpriteManager::kAttackFrameCount) {
+    return col - SpriteManager::kAttackStartColumn;
+  }
+  if (col >= SpriteManager::kHurtStartColumn &&
+      col < SpriteManager::kHurtStartColumn + SpriteManager::kHurtFrameCount) {
+    return col - SpriteManager::kHurtStartColumn;
+  }
+  if (col >= SpriteManager::kDeathStartColumn &&
+      col < SpriteManager::kDeathStartColumn + SpriteManager::kDeathFrameCount) {
+    return col - SpriteManager::kDeathStartColumn;
+  }
+  return 0;
+}
 }  // namespace
 
 bool SpriteManager::initialize(const std::string& spritesDirectory) {
@@ -215,7 +239,7 @@ std::vector<sf::Uint8> SpriteManager::makePlayerSheetPixels() {
                            : (direction == SpriteSheetDirection::Diagonal ? Rgba{96, 158, 235, 255}
                                                                           : Rgba{90, 150, 235, 255});
     for (unsigned col = 0; col < kSheetColumns; ++col) {
-      auto frame = makeHumanoidFrame(armor, Rgba{54, 96, 160, 255}, col % kWalkFrameCount);
+      auto frame = makeHumanoidFrame(armor, Rgba{54, 96, 160, 255}, frameForColumn(col));
       if (direction == SpriteSheetDirection::Left) {
         fillRect(frame, 8, 28, 7, 7, kSpriteSize, kSpriteSize, Rgba{255, 232, 112, 255});
       } else if (direction == SpriteSheetDirection::Diagonal) {
@@ -238,7 +262,7 @@ std::vector<sf::Uint8> SpriteManager::makeNpcSheetPixels() {
   for (unsigned row = 0; row < kSheetRows; ++row) {
     for (unsigned col = 0; col < kSheetColumns; ++col) {
       auto frame = makeRoundFrame(Rgba{100, static_cast<sf::Uint8>(220 + row * 6), 245, 255}, Rgba{60, 100, 150, 255},
-                                  col % kWalkFrameCount);
+                                  frameForColumn(col));
       blitFrame(sheet, col, row, frame);
     }
   }
@@ -252,7 +276,7 @@ std::vector<sf::Uint8> SpriteManager::makeMobSheetPixels() {
   for (unsigned row = 0; row < kSheetRows; ++row) {
     for (unsigned col = 0; col < kSheetColumns; ++col) {
       auto frame = makeRoundFrame(Rgba{220, static_cast<sf::Uint8>(58 + row * 8), 58, 255}, Rgba{132, 26, 26, 255},
-                                  col % kWalkFrameCount);
+                                  frameForColumn(col));
       blitFrame(sheet, col, row, frame);
     }
   }
