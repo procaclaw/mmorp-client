@@ -41,6 +41,8 @@ class GameClient {
   void handleSettingsMouseReleased();
   void applyViewportPreset(unsigned width, unsigned height);
   void setZoomFromSliderX(float x);
+  void loadSettings();
+  void saveSettings() const;
 
   void submitAuth();
   void startWorldSession();

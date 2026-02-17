@@ -6,10 +6,21 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <optional>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <sys/syslimits.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "nlohmann/json.hpp"
 
@@ -67,6 +78,30 @@ std::string maskPassword(const std::string& p) {
 
 bool containsPoint(const sf::FloatRect& rect, sf::Vector2f point) {
   return rect.contains(point);
+}
+
+std::filesystem::path settingsFilePath() {
+#if defined(_WIN32)
+  char buffer[MAX_PATH];
+  const DWORD len = GetModuleFileNameA(nullptr, buffer, MAX_PATH);
+  if (len > 0 && len < MAX_PATH) {
+    return std::filesystem::path(buffer).parent_path() / "settings.json";
+  }
+#elif defined(__APPLE__)
+  char buffer[PATH_MAX];
+  uint32_t size = sizeof(buffer);
+  if (_NSGetExecutablePath(buffer, &size) == 0) {
+    return std::filesystem::path(buffer).parent_path() / "settings.json";
+  }
+#else
+  char buffer[4096];
+  const ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+  if (len > 0) {
+    buffer[len] = '\0';
+    return std::filesystem::path(buffer).parent_path() / "settings.json";
+  }
+#endif
+  return std::filesystem::current_path() / "settings.json";
 }
 
 std::optional<std::string> getStringField(const json& j, std::initializer_list<const char*> keys) {
@@ -236,7 +271,7 @@ void parseTiles(WorldSnapshot& data, const json& mapNode) {
 }  // namespace
 
 GameClient::GameClient(std::string httpUrl, std::string wsUrl)
-    : window_(sf::VideoMode(1280, 720), "MMORPG SFML Client"), authClient_(std::move(httpUrl)),
+    : window_(sf::VideoMode(1920, 1080), "MMORPG SFML Client"), authClient_(std::move(httpUrl)),
       wsUrl_(std::move(wsUrl)) {
   window_.setVerticalSyncEnabled(false);
   window_.setFramerateLimit(60);
@@ -272,6 +307,7 @@ GameClient::GameClient(std::string httpUrl, std::string wsUrl)
   }
 
   renderer_.initGL();
+  loadSettings();
   renderer_.resize(static_cast<int>(window_.getSize().x), static_cast<int>(window_.getSize().y));
   settingsZoom_ = renderer_.cameraZoom();
   updateSettingsLayout();
@@ -333,8 +369,13 @@ void GameClient::setZoomFromSliderX(float x) {
   const float normalized =
       (x - zoomSliderTrackRect_.left) / std::max(1.0f, zoomSliderTrackRect_.width);
   const float clamped = std::clamp(normalized, 0.0f, 1.0f);
-  settingsZoom_ = kMinZoom + clamped * (kMaxZoom - kMinZoom);
+  const float newZoom = kMinZoom + clamped * (kMaxZoom - kMinZoom);
+  if (std::abs(newZoom - settingsZoom_) < 0.0001f) {
+    return;
+  }
+  settingsZoom_ = newZoom;
   renderer_.setCameraZoom(settingsZoom_);
+  saveSettings();
   updateSettingsLayout();
 }
 
@@ -350,10 +391,12 @@ bool GameClient::handleSettingsMousePressed(int x, int y) {
 
   if (containsPoint(viewportPresetA_, mouse)) {
     applyViewportPreset(1920, 1080);
+    saveSettings();
     return true;
   }
   if (containsPoint(viewportPresetB_, mouse)) {
     applyViewportPreset(1280, 768);
+    saveSettings();
     return true;
   }
   if (containsPoint(zoomSliderTrackRect_, mouse) || containsPoint(zoomSliderKnobRect_, mouse)) {
@@ -373,6 +416,60 @@ void GameClient::handleSettingsMouseMoved(int x) {
 
 void GameClient::handleSettingsMouseReleased() {
   draggingZoomSlider_ = false;
+}
+
+void GameClient::loadSettings() {
+  settingsZoom_ = renderer_.cameraZoom();
+
+  const std::filesystem::path path = settingsFilePath();
+  std::ifstream in(path);
+  if (!in.is_open()) {
+    return;
+  }
+
+  json config;
+  try {
+    in >> config;
+  } catch (...) {
+    return;
+  }
+
+  unsigned viewportWidth = window_.getSize().x;
+  unsigned viewportHeight = window_.getSize().y;
+  if (config.contains("viewport") && config["viewport"].is_object()) {
+    const auto& viewport = config["viewport"];
+    if (auto width = getIntField(viewport, {"width"}); width && *width > 0) {
+      viewportWidth = static_cast<unsigned>(*width);
+    }
+    if (auto height = getIntField(viewport, {"height"}); height && *height > 0) {
+      viewportHeight = static_cast<unsigned>(*height);
+    }
+  }
+
+  window_.setSize(sf::Vector2u(viewportWidth, viewportHeight));
+  renderer_.resize(static_cast<int>(viewportWidth), static_cast<int>(viewportHeight));
+
+  if (config.contains("camera_zoom")) {
+    const auto& zoom = config["camera_zoom"];
+    if (zoom.is_number()) {
+      settingsZoom_ = std::clamp(zoom.get<float>(), kMinZoom, kMaxZoom);
+      renderer_.setCameraZoom(settingsZoom_);
+    }
+  }
+}
+
+void GameClient::saveSettings() const {
+  const sf::Vector2u viewport = window_.getSize();
+  const json config{
+      {"viewport", {{"width", viewport.x}, {"height", viewport.y}}},
+      {"camera_zoom", renderer_.cameraZoom()},
+  };
+
+  std::ofstream out(settingsFilePath(), std::ios::trunc);
+  if (!out.is_open()) {
+    return;
+  }
+  out << config.dump(2) << '\n';
 }
 
 void GameClient::handleAuthEvent(const sf::Event& event) {
