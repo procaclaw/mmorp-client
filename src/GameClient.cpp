@@ -407,6 +407,10 @@ void GameClient::handleWorldEvent(const sf::Event& event) {
       tryAttackNearest();
       return;
     }
+    if (event.key.code == sf::Keyboard::E) {
+      tryInteractNearest();
+      return;
+    }
   }
   if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
     tryAttackNearest();
@@ -462,6 +466,7 @@ void GameClient::startWorldSession() {
   reconnectAccumulator_ = 0.0f;
   lastMoveAtMs_ = 0;
   lastAttackAtMs_ = 0;
+  lastInteractAtMs_ = 0;
   if (!wsClient_.connect(wsUrl_, jwt_)) {
     statusText_ = wsClient_.lastStatus();
     world_.setConnectionStatus(statusText_, false);
@@ -634,6 +639,45 @@ void GameClient::tryAttackNearest() {
 
   json attackMsg{{"type", "attack"}, {"targetId", targetMobId}, {"mobId", targetMobId}};
   wsClient_.sendText(attackMsg.dump());
+}
+
+void GameClient::tryInteractNearest() {
+  if (!wsClient_.isConnected()) {
+    return;
+  }
+  const std::uint64_t now = WorldState::nowMs();
+  if (now - lastInteractAtMs_ < 1000) {
+    return;
+  }
+  lastInteractAtMs_ = now;
+
+  std::string targetNpcId;
+  int selfX = 0;
+  int selfY = 0;
+  int bestDist = std::numeric_limits<int>::max();
+  {
+    std::lock_guard<std::mutex> lock(world_.mutex);
+    const auto selfIt = world_.data.players.find(world_.data.localPlayerId);
+    if (selfIt == world_.data.players.end()) {
+      return;
+    }
+    selfX = selfIt->second.x;
+    selfY = selfIt->second.y;
+    for (const auto& [id, npc] : world_.data.npcs) {
+      const int dist = std::abs(npc.x - selfX) + std::abs(npc.y - selfY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        targetNpcId = id;
+      }
+    }
+  }
+
+  if (targetNpcId.empty() || bestDist > 2) {
+    return;
+  }
+
+  json interactMsg{{"type", "interact"}, {"npcId", targetNpcId}, {"action", "talk"}};
+  wsClient_.sendText(interactMsg.dump());
 }
 
 void GameClient::parseAndApplyMessage(const std::string& raw) {
@@ -853,6 +897,35 @@ void GameClient::parseAndApplyMessage(const std::string& raw) {
       world_.data.chatLines.push_back(ChatLine{id + " died", WorldState::nowMs()});
       while (world_.data.chatLines.size() > 12) {
         world_.data.chatLines.pop_front();
+      }
+      return;
+    }
+
+    if (type == "npc_response") {
+      std::lock_guard<std::mutex> lock(world_.mutex);
+      std::string npcId = msg.value("npcId", "");
+      std::string text;
+      if (msg.contains("result") && msg["result"].contains("text") && msg["result"]["text"].is_string()) {
+        text = msg["result"]["text"].get<std::string>();
+      }
+      std::string npcName = npcId;
+      auto npcIt = world_.data.npcs.find(npcId);
+      if (npcIt != world_.data.npcs.end()) {
+        npcName = npcIt->second.name;
+      }
+      if (!text.empty()) {
+        world_.pushChat("[" + npcName + "] " + text);
+      }
+      std::string optionsStr;
+      if (msg.contains("result") && msg["result"].contains("options") && msg["result"]["options"].is_array()) {
+        const auto& opts = msg["result"]["options"];
+        for (std::size_t i = 0; i < opts.size(); ++i) {
+          if (i > 0) optionsStr += ", ";
+          optionsStr += opts[i].get<std::string>();
+        }
+      }
+      if (!optionsStr.empty()) {
+        world_.pushChat("NPC Options: " + optionsStr);
       }
       return;
     }

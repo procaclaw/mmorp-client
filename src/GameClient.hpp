@@ -43,6 +43,7 @@ class GameClient {
   void updateInterpolations(float dt);
   void updateCombatEffects(float dt);
   void tryAttackNearest();
+  void tryInteractNearest();
   void sendMoveCommand(int dx, int dy);
   void parseAndApplyMessage(const std::string& raw);
   void processNetworkMessages();
@@ -79,6 +80,7 @@ class GameClient {
   float moveAccumulator_ = 0.0f;
   std::uint64_t lastMoveAtMs_ = 0;
   std::uint64_t lastAttackAtMs_ = 0;
+  std::uint64_t lastInteractAtMs_ = 0;
   float reconnectAccumulator_ = 0.0f;
   bool reconnectEnabled_ = true;
 
