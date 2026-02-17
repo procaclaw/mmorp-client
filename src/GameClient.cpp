@@ -902,29 +902,68 @@ void GameClient::parseAndApplyMessage(const std::string& raw) {
     }
 
     if (type == "npc_response") {
-      std::lock_guard<std::mutex> lock(world_.mutex);
-      std::string npcId = msg.value("npcId", "");
-      std::string text;
-      if (msg.contains("result") && msg["result"].contains("text") && msg["result"]["text"].is_string()) {
-        text = msg["result"]["text"].get<std::string>();
-      }
-      std::string npcName = npcId;
-      auto npcIt = world_.data.npcs.find(npcId);
-      if (npcIt != world_.data.npcs.end()) {
-        npcName = npcIt->second.name;
-      }
-      if (!text.empty()) {
-        world_.pushChat("[" + npcName + "] " + text);
-      }
-      std::string optionsStr;
-      if (msg.contains("result") && msg["result"].contains("options") && msg["result"]["options"].is_array()) {
-        const auto& opts = msg["result"]["options"];
-        for (std::size_t i = 0; i < opts.size(); ++i) {
-          if (i > 0) optionsStr += ", ";
-          optionsStr += opts[i].get<std::string>();
+      std::string npcId = getStringField(msg, {"npcId", "id"}).value_or("");
+      std::string npcText;
+      std::vector<std::string> optionLabels;
+
+      if (msg.contains("result") && msg["result"].is_object()) {
+        const auto& result = msg["result"];
+        if (result.contains("text") && result["text"].is_string()) {
+          npcText = result["text"].get<std::string>();
+        }
+        if (result.contains("options") && result["options"].is_array()) {
+          for (const auto& option : result["options"]) {
+            if (option.is_string()) {
+              optionLabels.push_back(option.get<std::string>());
+              continue;
+            }
+            if (option.is_object()) {
+              const auto label = getStringField(option, {"label", "text", "name", "id"});
+              if (label.has_value() && !label->empty()) {
+                optionLabels.push_back(label.value());
+              }
+            }
+          }
         }
       }
-      if (!optionsStr.empty()) {
+
+      if (npcText.empty()) {
+        npcText = getStringField(msg, {"text", "message"}).value_or("");
+      }
+      if (optionLabels.empty() && msg.contains("options") && msg["options"].is_array()) {
+        for (const auto& option : msg["options"]) {
+          if (option.is_string()) {
+            optionLabels.push_back(option.get<std::string>());
+          } else if (option.is_object()) {
+            const auto label = getStringField(option, {"label", "text", "name", "id"});
+            if (label.has_value() && !label->empty()) {
+              optionLabels.push_back(label.value());
+            }
+          }
+        }
+      }
+
+      std::string npcName = npcId;
+      {
+        std::lock_guard<std::mutex> lock(world_.mutex);
+        auto npcIt = world_.data.npcs.find(npcId);
+        if (npcIt != world_.data.npcs.end() && !npcIt->second.name.empty()) {
+          npcName = npcIt->second.name;
+        }
+      }
+
+      if (!npcText.empty()) {
+        const std::string prefix = npcName.empty() ? "[NPC] " : ("[" + npcName + "] ");
+        world_.pushChat(prefix + npcText);
+      }
+      if (!optionLabels.empty()) {
+        std::string optionsStr;
+        for (std::size_t i = 0; i < optionLabels.size(); ++i) {
+          if (i > 0) {
+            optionsStr += ", ";
+          }
+          optionsStr += optionLabels[i];
+        }
         world_.pushChat("NPC Options: " + optionsStr);
       }
       return;
@@ -1223,7 +1262,8 @@ void GameClient::renderWorldScreen() {
   const PlayerState* self = (localIt == snapshot.players.end()) ? nullptr : &localIt->second;
   drawLabel("Connection: " + snapshot.connectionStatus, 24, 20, 16, snapshot.connected ? sf::Color(130, 245, 150)
                                                                                           : sf::Color(255, 150, 120));
-  drawLabel("Controls: WASD/Arrows move, Space/Click attack, Esc exit", 24, 42, 14, sf::Color(220, 225, 235));
+  drawLabel("Controls: WASD/Arrows move, Space/Click attack, E interact, Esc exit", 24, 42, 14,
+            sf::Color(220, 225, 235));
   if (self != nullptr) {
     drawLabel("Player: " + self->name + "  Class: " + self->className, 24, 66, 16, sf::Color::White);
     drawLabel("HP: " + std::to_string(self->hp) + "/" + std::to_string(self->maxHp) + "  Level: " +

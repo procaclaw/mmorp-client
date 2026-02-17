@@ -26,6 +26,7 @@ Default classes:
 - `S` or `Down`: move backward (+Z)
 - `A` or `Left`: move left (-X)
 - `D` or `Right`: move right (+X)
+- `E`: interact with nearest NPC in range
 - `Esc`: leave world socket and return to auth screen
 
 Movement details:
