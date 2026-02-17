@@ -38,6 +38,7 @@ WebSocketClient::~WebSocketClient() {
 
 bool WebSocketClient::connect(const std::string& url, const std::string& jwt) {
   disconnect();
+  setStatus("Connecting...");
 
   std::string wsUrl = url;
   if (!jwt.empty()) {

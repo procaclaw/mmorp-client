@@ -1,20 +1,22 @@
 #pragma once
 
-#include <SFML/Graphics/Color.hpp>
+#include <SFML/Graphics.hpp>
 
-#include "Math3D.hpp"
 #include "WorldState.hpp"
 
 class Renderer3D {
  public:
   void initGL();
   void resize(int width, int height);
-  void render(const WorldState& world);
+  void render(sf::RenderTarget& target, const WorldSnapshot& world, const sf::Font* font = nullptr);
 
  private:
-  void setCamera(const Vec3& target);
-  void drawPlane(float size);
-  void drawCube(float size);
-  void drawSphere(float radius, int stacks, int slices);
-  void setColor(const sf::Color& c);
+  void drawTileLayer(sf::RenderTarget& target, const WorldSnapshot& world) const;
+  void drawGrid(sf::RenderTarget& target, const WorldSnapshot& world) const;
+  void drawEntities(sf::RenderTarget& target, const WorldSnapshot& world, const sf::Font* font) const;
+  void drawMinimap(sf::RenderTarget& target, const WorldSnapshot& world) const;
+  void drawHealthBar(sf::RenderTarget& target, sf::Vector2f center, float width, float fillRatio) const;
+
+  int viewportWidth_ = 1280;
+  int viewportHeight_ = 720;
 };

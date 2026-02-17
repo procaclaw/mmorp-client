@@ -15,11 +15,19 @@ std::string envOrDefault(const char* name, const char* fallback) {
   }
   return value;
 }
+
+std::string envChainOrDefault(const char* first, const char* second, const char* fallback) {
+  const std::string a = envOrDefault(first, "");
+  if (!a.empty()) {
+    return a;
+  }
+  return envOrDefault(second, fallback);
+}
 }  // namespace
 
 int main(int argc, char** argv) {
-  std::string httpUrl = envOrDefault("MMORP_HTTP_URL", kDefaultHttpUrl);
-  std::string wsUrl = envOrDefault("MMORP_WS_URL", kDefaultWsUrl);
+  std::string httpUrl = envChainOrDefault("MMORPG_HTTP_URL", "MMORP_HTTP_URL", kDefaultHttpUrl);
+  std::string wsUrl = envChainOrDefault("MMORPG_WS_URL", "MMORP_WS_URL", kDefaultWsUrl);
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -34,8 +42,8 @@ int main(int argc, char** argv) {
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "Usage: mmorp-client [--http-url URL] [--ws-url URL]\n"
                 << "Environment fallbacks:\n"
-                << "  MMORP_HTTP_URL (default: " << kDefaultHttpUrl << ")\n"
-                << "  MMORP_WS_URL   (default: " << kDefaultWsUrl << ")\n";
+                << "  MMORPG_HTTP_URL / MMORP_HTTP_URL (default: " << kDefaultHttpUrl << ")\n"
+                << "  MMORPG_WS_URL   / MMORP_WS_URL   (default: " << kDefaultWsUrl << ")\n";
       return 0;
     } else {
       std::cerr << "Unknown argument: " << arg << "\n";

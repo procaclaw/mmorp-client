@@ -1,177 +1,214 @@
 #include "Renderer3D.hpp"
 
-#include <SFML/OpenGL.hpp>
-
-#include <cmath>
+#include <algorithm>
 
 namespace {
-constexpr float kPi = 3.1415926535f;
-
-void perspective(float fovYDeg, float aspect, float zNear, float zFar) {
-  const float f = 1.0f / std::tan((fovYDeg * kPi / 180.0f) * 0.5f);
-  const float m[16] = {
-      f / aspect, 0, 0, 0,
-      0, f, 0, 0,
-      0, 0, (zFar + zNear) / (zNear - zFar), -1,
-      0, 0, (2 * zFar * zNear) / (zNear - zFar), 0,
-  };
-  glMatrixMode(GL_PROJECTION);
-  glLoadMatrixf(m);
+sf::Color tileColor(TileType t) {
+  switch (t) {
+    case TileType::Grass:
+      return sf::Color(78, 148, 73);
+    case TileType::Water:
+      return sf::Color(56, 116, 191);
+    case TileType::Wall:
+      return sf::Color(120, 122, 126);
+    case TileType::Forest:
+      return sf::Color(38, 98, 40);
+  }
+  return sf::Color(100, 120, 100);
 }
 
-void lookAt(const Vec3& eye, const Vec3& center, const Vec3& up) {
-  const Vec3 f = normalize(center - eye);
-  const Vec3 s = normalize(cross(f, up));
-  const Vec3 u = cross(s, f);
+float clamp01(float v) {
+  return std::max(0.0f, std::min(1.0f, v));
+}
 
-  const float m[16] = {
-      s.x, u.x, -f.x, 0,
-      s.y, u.y, -f.y, 0,
-      s.z, u.z, -f.z, 0,
-      -dot(s, eye), -dot(u, eye), dot(f, eye), 1,
-  };
-
-  glMatrixMode(GL_MODELVIEW);
-  glLoadMatrixf(m);
+void drawName(sf::RenderTarget& target, const sf::Font* font, const std::string& name, sf::Vector2f center,
+              unsigned size, const sf::Color& color) {
+  if (font == nullptr || name.empty()) {
+    return;
+  }
+  sf::Text text;
+  text.setFont(*font);
+  text.setCharacterSize(size);
+  text.setFillColor(color);
+  text.setString(name);
+  const auto bounds = text.getLocalBounds();
+  text.setOrigin(bounds.left + bounds.width * 0.5f, bounds.top + bounds.height * 0.5f);
+  text.setPosition(center.x, center.y);
+  target.draw(text);
 }
 }  // namespace
 
-void Renderer3D::initGL() {
-  glEnable(GL_DEPTH_TEST);
-  glDepthFunc(GL_LEQUAL);
-  glEnable(GL_CULL_FACE);
-  glCullFace(GL_BACK);
-  glEnable(GL_COLOR_MATERIAL);
-  glShadeModel(GL_SMOOTH);
-}
+void Renderer3D::initGL() {}
 
 void Renderer3D::resize(int width, int height) {
-  if (height == 0) {
-    height = 1;
+  viewportWidth_ = std::max(1, width);
+  viewportHeight_ = std::max(1, height);
+}
+
+void Renderer3D::render(sf::RenderTarget& target, const WorldSnapshot& world, const sf::Font* font) {
+  sf::View worldView;
+  worldView.setSize(static_cast<float>(viewportWidth_), static_cast<float>(viewportHeight_));
+
+  float localPx = static_cast<float>(world.width * world.tileSize) * 0.5f;
+  float localPy = static_cast<float>(world.height * world.tileSize) * 0.5f;
+  auto localIt = world.players.find(world.localPlayerId);
+  if (localIt != world.players.end()) {
+    localPx = (localIt->second.renderX + 0.5f) * static_cast<float>(world.tileSize);
+    localPy = (localIt->second.renderY + 0.5f) * static_cast<float>(world.tileSize);
   }
-  glViewport(0, 0, width, height);
-  perspective(60.0f, static_cast<float>(width) / static_cast<float>(height), 0.1f, 200.0f);
+
+  const float worldPixelWidth = static_cast<float>(world.width * world.tileSize);
+  const float worldPixelHeight = static_cast<float>(world.height * world.tileSize);
+  const float halfW = worldView.getSize().x * 0.5f;
+  const float halfH = worldView.getSize().y * 0.5f;
+  const float cx = std::clamp(localPx, halfW, std::max(halfW, worldPixelWidth - halfW));
+  const float cy = std::clamp(localPy, halfH, std::max(halfH, worldPixelHeight - halfH));
+  worldView.setCenter(cx, cy);
+
+  target.setView(worldView);
+  drawTileLayer(target, world);
+  drawGrid(target, world);
+  drawEntities(target, world, font);
+  drawMinimap(target, world);
+  target.setView(target.getDefaultView());
 }
 
-void Renderer3D::setColor(const sf::Color& c) {
-  glColor3f(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f);
-}
-
-void Renderer3D::setCamera(const Vec3& target) {
-  const Vec3 cameraOffset{-5.0f, 4.0f, -5.0f};
-  const Vec3 eye = target + cameraOffset;
-  lookAt(eye, target, Vec3{0.0f, 1.0f, 0.0f});
-}
-
-void Renderer3D::drawPlane(float size) {
-  const float hs = size * 0.5f;
-  glBegin(GL_QUADS);
-  glNormal3f(0.0f, 1.0f, 0.0f);
-  glVertex3f(-hs, 0.0f, -hs);
-  glVertex3f(hs, 0.0f, -hs);
-  glVertex3f(hs, 0.0f, hs);
-  glVertex3f(-hs, 0.0f, hs);
-  glEnd();
-}
-
-void Renderer3D::drawCube(float size) {
-  const float hs = size * 0.5f;
-  glBegin(GL_QUADS);
-
-  glNormal3f(0, 0, 1);
-  glVertex3f(-hs, -hs, hs);
-  glVertex3f(hs, -hs, hs);
-  glVertex3f(hs, hs, hs);
-  glVertex3f(-hs, hs, hs);
-
-  glNormal3f(0, 0, -1);
-  glVertex3f(hs, -hs, -hs);
-  glVertex3f(-hs, -hs, -hs);
-  glVertex3f(-hs, hs, -hs);
-  glVertex3f(hs, hs, -hs);
-
-  glNormal3f(1, 0, 0);
-  glVertex3f(hs, -hs, hs);
-  glVertex3f(hs, -hs, -hs);
-  glVertex3f(hs, hs, -hs);
-  glVertex3f(hs, hs, hs);
-
-  glNormal3f(-1, 0, 0);
-  glVertex3f(-hs, -hs, -hs);
-  glVertex3f(-hs, -hs, hs);
-  glVertex3f(-hs, hs, hs);
-  glVertex3f(-hs, hs, -hs);
-
-  glNormal3f(0, 1, 0);
-  glVertex3f(-hs, hs, hs);
-  glVertex3f(hs, hs, hs);
-  glVertex3f(hs, hs, -hs);
-  glVertex3f(-hs, hs, -hs);
-
-  glNormal3f(0, -1, 0);
-  glVertex3f(-hs, -hs, -hs);
-  glVertex3f(hs, -hs, -hs);
-  glVertex3f(hs, -hs, hs);
-  glVertex3f(-hs, -hs, hs);
-
-  glEnd();
-}
-
-void Renderer3D::drawSphere(float radius, int stacks, int slices) {
-  for (int i = 0; i < stacks; ++i) {
-    const float lat0 = kPi * (-0.5f + static_cast<float>(i) / static_cast<float>(stacks));
-    const float z0 = std::sin(lat0) * radius;
-    const float zr0 = std::cos(lat0) * radius;
-
-    const float lat1 = kPi * (-0.5f + static_cast<float>(i + 1) / static_cast<float>(stacks));
-    const float z1 = std::sin(lat1) * radius;
-    const float zr1 = std::cos(lat1) * radius;
-
-    glBegin(GL_QUAD_STRIP);
-    for (int j = 0; j <= slices; ++j) {
-      const float lng = 2.0f * kPi * static_cast<float>(j) / static_cast<float>(slices);
-      const float x = std::cos(lng);
-      const float y = std::sin(lng);
-
-      glNormal3f(x * zr0 / radius, y * zr0 / radius, z0 / radius);
-      glVertex3f(x * zr0, y * zr0, z0);
-
-      glNormal3f(x * zr1 / radius, y * zr1 / radius, z1 / radius);
-      glVertex3f(x * zr1, y * zr1, z1);
+void Renderer3D::drawTileLayer(sf::RenderTarget& target, const WorldSnapshot& world) const {
+  sf::RectangleShape tile;
+  tile.setSize(sf::Vector2f(static_cast<float>(world.tileSize), static_cast<float>(world.tileSize)));
+  for (int y = 0; y < world.height; ++y) {
+    for (int x = 0; x < world.width; ++x) {
+      const TileType type = world.tiles[static_cast<std::size_t>(y * world.width + x)];
+      tile.setFillColor(tileColor(type));
+      tile.setPosition(static_cast<float>(x * world.tileSize), static_cast<float>(y * world.tileSize));
+      target.draw(tile);
     }
-    glEnd();
   }
 }
 
-void Renderer3D::render(const WorldState& world) {
-  glClearColor(0.11f, 0.12f, 0.16f, 1.0f);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+void Renderer3D::drawGrid(sf::RenderTarget& target, const WorldSnapshot& world) const {
+  const float w = static_cast<float>(world.width * world.tileSize);
+  const float h = static_cast<float>(world.height * world.tileSize);
+  sf::VertexArray lines(sf::Lines);
+  for (int x = 0; x <= world.width; ++x) {
+    const float px = static_cast<float>(x * world.tileSize);
+    lines.append(sf::Vertex(sf::Vector2f(px, 0.0f), sf::Color(0, 0, 0, 32)));
+    lines.append(sf::Vertex(sf::Vector2f(px, h), sf::Color(0, 0, 0, 32)));
+  }
+  for (int y = 0; y <= world.height; ++y) {
+    const float py = static_cast<float>(y * world.tileSize);
+    lines.append(sf::Vertex(sf::Vector2f(0.0f, py), sf::Color(0, 0, 0, 32)));
+    lines.append(sf::Vertex(sf::Vector2f(w, py), sf::Color(0, 0, 0, 32)));
+  }
+  target.draw(lines);
+}
 
-  setCamera(world.localPlayer.position + Vec3{0.0f, 1.0f, 0.0f});
-
-  setColor(sf::Color(64, 110, 66));
-  drawPlane(60.0f);
-
-  setColor(sf::Color(90, 90, 120));
-  for (int i = -3; i <= 3; i += 3) {
-    glPushMatrix();
-    glTranslatef(static_cast<float>(i), 0.4f, -8.0f);
-    drawCube(0.8f);
-    glPopMatrix();
+void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& world, const sf::Font* font) const {
+  for (const auto& [_, npc] : world.npcs) {
+    sf::CircleShape body(9.0f);
+    body.setFillColor(sf::Color(100, 240, 245));
+    body.setOutlineColor(sf::Color(60, 100, 150));
+    body.setOutlineThickness(2.0f);
+    body.setOrigin(9.0f, 9.0f);
+    const sf::Vector2f center((npc.renderX + 0.5f) * static_cast<float>(world.tileSize),
+                              (npc.renderY + 0.5f) * static_cast<float>(world.tileSize));
+    body.setPosition(center);
+    target.draw(body);
+    drawName(target, font, npc.name, sf::Vector2f(center.x, center.y - 16.0f), 12, sf::Color::White);
   }
 
-  setColor(sf::Color(60, 170, 255));
-  glPushMatrix();
-  glTranslatef(world.localPlayer.position.x, world.localPlayer.position.y, world.localPlayer.position.z);
-  drawCube(1.0f);
-  glPopMatrix();
-
-  setColor(sf::Color(255, 180, 80));
-  for (const auto& [id, p] : world.remotePlayers) {
-    (void)id;
-    glPushMatrix();
-    glTranslatef(p.position.x, p.position.y, p.position.z);
-    drawSphere(0.55f, 12, 16);
-    glPopMatrix();
+  for (const auto& [_, mob] : world.mobs) {
+    sf::CircleShape body(10.0f, 3);
+    body.setFillColor(mob.alive ? sf::Color(220, 58, 58) : sf::Color(95, 52, 52));
+    body.setOrigin(10.0f, 10.0f);
+    const sf::Vector2f center((mob.renderX + 0.5f) * static_cast<float>(world.tileSize),
+                              (mob.renderY + 0.5f) * static_cast<float>(world.tileSize));
+    body.setPosition(center);
+    target.draw(body);
+    if (mob.hp < mob.maxHp) {
+      drawHealthBar(target, sf::Vector2f(center.x, center.y - 16.0f), 22.0f,
+                    static_cast<float>(mob.hp) / std::max(1.0f, static_cast<float>(mob.maxHp)));
+    }
   }
+
+  for (const auto& [id, player] : world.players) {
+    const bool isSelf = id == world.localPlayerId;
+    sf::CircleShape body(11.0f);
+    body.setFillColor(isSelf ? sf::Color(240, 217, 88) : sf::Color(230, 230, 255));
+    body.setOutlineColor(isSelf ? sf::Color(255, 166, 45) : sf::Color(120, 122, 160));
+    body.setOutlineThickness(2.0f);
+    body.setOrigin(11.0f, 11.0f);
+    const sf::Vector2f center((player.renderX + 0.5f) * static_cast<float>(world.tileSize),
+                              (player.renderY + 0.5f) * static_cast<float>(world.tileSize));
+    body.setPosition(center);
+    target.draw(body);
+
+    drawHealthBar(target, sf::Vector2f(center.x, center.y - 19.0f), 28.0f,
+                  static_cast<float>(player.hp) / std::max(1.0f, static_cast<float>(player.maxHp)));
+    drawName(target, font, player.name.empty() ? player.id : player.name,
+             sf::Vector2f(center.x, center.y - 32.0f), 12, isSelf ? sf::Color(255, 235, 120) : sf::Color::White);
+  }
+
+  if (font == nullptr) {
+    return;
+  }
+  for (const auto& fx : world.combatTexts) {
+    sf::Text text;
+    text.setFont(*font);
+    text.setCharacterSize(14);
+    text.setFillColor(sf::Color(fx.r, fx.g, fx.b, static_cast<sf::Uint8>(255.0f * clamp01(fx.ttl))));
+    text.setString(fx.text);
+    text.setPosition((fx.worldX + 0.5f) * static_cast<float>(world.tileSize) - 8.0f,
+                     (fx.worldY + 0.5f) * static_cast<float>(world.tileSize) - (1.2f - fx.ttl) * 26.0f);
+    target.draw(text);
+  }
+}
+
+void Renderer3D::drawMinimap(sf::RenderTarget& target, const WorldSnapshot& world) const {
+  const sf::View previousView = target.getView();
+  target.setView(target.getDefaultView());
+  const sf::View defaultView = target.getDefaultView();
+  const auto size = defaultView.getSize();
+  const auto center = defaultView.getCenter();
+  const float topLeftX = center.x - size.x * 0.5f;
+  const float topLeftY = center.y - size.y * 0.5f;
+
+  const float miniSize = 170.0f;
+  const sf::FloatRect mini(topLeftX + size.x - miniSize - 16.0f, topLeftY + 16.0f, miniSize, miniSize);
+  sf::RectangleShape bg(sf::Vector2f(mini.width, mini.height));
+  bg.setPosition(mini.left, mini.top);
+  bg.setFillColor(sf::Color(16, 19, 28, 170));
+  bg.setOutlineColor(sf::Color(215, 220, 235, 140));
+  bg.setOutlineThickness(1.0f);
+  target.draw(bg);
+
+  const float sx = mini.width / static_cast<float>(std::max(1, world.width));
+  const float sy = mini.height / static_cast<float>(std::max(1, world.height));
+
+  sf::RectangleShape dot(sf::Vector2f(std::max(1.0f, sx), std::max(1.0f, sy)));
+  for (const auto& [id, p] : world.players) {
+    dot.setFillColor(id == world.localPlayerId ? sf::Color(255, 228, 107) : sf::Color(227, 231, 255));
+    dot.setPosition(mini.left + p.renderX * sx, mini.top + p.renderY * sy);
+    target.draw(dot);
+  }
+  for (const auto& [_, m] : world.mobs) {
+    dot.setFillColor(sf::Color(235, 86, 86));
+    dot.setPosition(mini.left + m.renderX * sx, mini.top + m.renderY * sy);
+    target.draw(dot);
+  }
+  target.setView(previousView);
+}
+
+void Renderer3D::drawHealthBar(sf::RenderTarget& target, sf::Vector2f center, float width,
+                               float fillRatio) const {
+  const float h = 4.0f;
+  sf::RectangleShape bg(sf::Vector2f(width, h));
+  bg.setPosition(center.x - width * 0.5f, center.y);
+  bg.setFillColor(sf::Color(45, 12, 12, 215));
+  target.draw(bg);
+
+  sf::RectangleShape fg(sf::Vector2f(width * clamp01(fillRatio), h));
+  fg.setPosition(center.x - width * 0.5f, center.y);
+  fg.setFillColor(sf::Color(78, 220, 86));
+  target.draw(fg);
 }

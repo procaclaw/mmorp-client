@@ -2,6 +2,7 @@
 
 #include <SFML/Graphics.hpp>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -30,14 +31,21 @@ class GameClient {
 
   void handleAuthEvent(const sf::Event& event);
   void handleCharacterSelectEvent(const sf::Event& event);
+  void handleWorldEvent(const sf::Event& event);
 
   void submitAuth();
   void startWorldSession();
   void leaveWorldSession();
 
   void updateMovement(float dt);
+  void updateInterpolations(float dt);
+  void updateCombatEffects(float dt);
+  void tryAttackNearest();
+  void sendMoveCommand(int dx, int dy);
+  void parseAndApplyMessage(const std::string& raw);
   void processNetworkMessages();
   void sendJoinIfNeeded();
+  void maybeReconnect(float dt);
 
   void drawLabel(const std::string& text, float x, float y, unsigned size = 22,
                  const sf::Color& color = sf::Color::White);
@@ -62,7 +70,11 @@ class GameClient {
 
   WorldState world_;
   bool joinSent_ = false;
-  float moveBroadcastAccumulator_ = 0.0f;
+  float moveAccumulator_ = 0.0f;
+  std::uint64_t lastMoveAtMs_ = 0;
+  std::uint64_t lastAttackAtMs_ = 0;
+  float reconnectAccumulator_ = 0.0f;
+  bool reconnectEnabled_ = true;
 
   sf::Font font_;
   bool fontLoaded_ = false;
