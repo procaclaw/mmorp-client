@@ -9,6 +9,8 @@ class Renderer3D {
  public:
   void initGL();
   void resize(int width, int height);
+  void setCameraZoom(float zoom);
+  float cameraZoom() const;
   void render(sf::RenderTarget& target, const WorldSnapshot& world, const sf::Font* font = nullptr);
 
  private:

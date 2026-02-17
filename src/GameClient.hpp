@@ -29,11 +29,18 @@ class GameClient {
   void renderCharacterSelectScreen();
   void renderCharacterCreateScreen();
   void renderWorldScreen();
+  void renderSettingsMenu();
 
   void handleAuthEvent(const sf::Event& event);
   void handleCharacterSelectEvent(const sf::Event& event);
   void handleCharacterCreateEvent(const sf::Event& event);
   void handleWorldEvent(const sf::Event& event);
+  void updateSettingsLayout();
+  bool handleSettingsMousePressed(int x, int y);
+  void handleSettingsMouseMoved(int x);
+  void handleSettingsMouseReleased();
+  void applyViewportPreset(unsigned width, unsigned height);
+  void setZoomFromSliderX(float x);
 
   void submitAuth();
   void startWorldSession();
@@ -83,6 +90,14 @@ class GameClient {
   std::uint64_t lastInteractAtMs_ = 0;
   float reconnectAccumulator_ = 0.0f;
   bool reconnectEnabled_ = true;
+  bool settingsMenuOpen_ = false;
+  bool draggingZoomSlider_ = false;
+  float settingsZoom_ = 0.75f;
+  sf::FloatRect settingsPanelRect_;
+  sf::FloatRect viewportPresetA_;
+  sf::FloatRect viewportPresetB_;
+  sf::FloatRect zoomSliderTrackRect_;
+  sf::FloatRect zoomSliderKnobRect_;
 
   sf::Font font_;
   bool fontLoaded_ = false;

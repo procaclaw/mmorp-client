@@ -16,6 +16,9 @@
 using json = nlohmann::json;
 
 namespace {
+constexpr float kMinZoom = 0.25f;
+constexpr float kMaxZoom = 1.0f;
+
 struct ClassArchetype {
   const char* name;
   sf::Color color;
@@ -60,6 +63,10 @@ std::string trimName(const std::string& value) {
 
 std::string maskPassword(const std::string& p) {
   return std::string(p.size(), '*');
+}
+
+bool containsPoint(const sf::FloatRect& rect, sf::Vector2f point) {
+  return rect.contains(point);
 }
 
 std::optional<std::string> getStringField(const json& j, std::initializer_list<const char*> keys) {
@@ -266,6 +273,8 @@ GameClient::GameClient(std::string httpUrl, std::string wsUrl)
 
   renderer_.initGL();
   renderer_.resize(static_cast<int>(window_.getSize().x), static_cast<int>(window_.getSize().y));
+  settingsZoom_ = renderer_.cameraZoom();
+  updateSettingsLayout();
 }
 
 void GameClient::run() {
@@ -288,6 +297,7 @@ void GameClient::processEvents() {
     }
     if (event.type == sf::Event::Resized) {
       renderer_.resize(static_cast<int>(event.size.width), static_cast<int>(event.size.height));
+      updateSettingsLayout();
     }
 
     if (screen_ == ScreenState::Auth) {
@@ -300,6 +310,69 @@ void GameClient::processEvents() {
       handleWorldEvent(event);
     }
   }
+}
+
+void GameClient::updateSettingsLayout() {
+  const sf::Vector2u size = window_.getSize();
+  const float panelWidth = 460.0f;
+  const float panelHeight = 250.0f;
+  const float panelX = (static_cast<float>(size.x) - panelWidth) * 0.5f;
+  const float panelY = (static_cast<float>(size.y) - panelHeight) * 0.5f;
+  settingsPanelRect_ = sf::FloatRect(panelX, panelY, panelWidth, panelHeight);
+
+  viewportPresetA_ = sf::FloatRect(panelX + 22.0f, panelY + 72.0f, 194.0f, 38.0f);
+  viewportPresetB_ = sf::FloatRect(panelX + 244.0f, panelY + 72.0f, 194.0f, 38.0f);
+  zoomSliderTrackRect_ = sf::FloatRect(panelX + 28.0f, panelY + 174.0f, panelWidth - 56.0f, 8.0f);
+
+  const float t = (settingsZoom_ - kMinZoom) / (kMaxZoom - kMinZoom);
+  const float knobCenterX = zoomSliderTrackRect_.left + std::clamp(t, 0.0f, 1.0f) * zoomSliderTrackRect_.width;
+  zoomSliderKnobRect_ = sf::FloatRect(knobCenterX - 8.0f, zoomSliderTrackRect_.top - 6.0f, 16.0f, 20.0f);
+}
+
+void GameClient::setZoomFromSliderX(float x) {
+  const float normalized =
+      (x - zoomSliderTrackRect_.left) / std::max(1.0f, zoomSliderTrackRect_.width);
+  const float clamped = std::clamp(normalized, 0.0f, 1.0f);
+  settingsZoom_ = kMinZoom + clamped * (kMaxZoom - kMinZoom);
+  renderer_.setCameraZoom(settingsZoom_);
+  updateSettingsLayout();
+}
+
+void GameClient::applyViewportPreset(unsigned width, unsigned height) {
+  window_.setSize(sf::Vector2u(width, height));
+  renderer_.resize(static_cast<int>(width), static_cast<int>(height));
+  updateSettingsLayout();
+}
+
+bool GameClient::handleSettingsMousePressed(int x, int y) {
+  const sf::Vector2f mouse(static_cast<float>(x), static_cast<float>(y));
+  updateSettingsLayout();
+
+  if (containsPoint(viewportPresetA_, mouse)) {
+    applyViewportPreset(1920, 1080);
+    return true;
+  }
+  if (containsPoint(viewportPresetB_, mouse)) {
+    applyViewportPreset(1280, 768);
+    return true;
+  }
+  if (containsPoint(zoomSliderTrackRect_, mouse) || containsPoint(zoomSliderKnobRect_, mouse)) {
+    draggingZoomSlider_ = true;
+    setZoomFromSliderX(mouse.x);
+    return true;
+  }
+  return containsPoint(settingsPanelRect_, mouse);
+}
+
+void GameClient::handleSettingsMouseMoved(int x) {
+  if (!draggingZoomSlider_) {
+    return;
+  }
+  setZoomFromSliderX(static_cast<float>(x));
+}
+
+void GameClient::handleSettingsMouseReleased() {
+  draggingZoomSlider_ = false;
 }
 
 void GameClient::handleAuthEvent(const sf::Event& event) {
@@ -397,6 +470,20 @@ void GameClient::handleCharacterCreateEvent(const sf::Event& event) {
 
 void GameClient::handleWorldEvent(const sf::Event& event) {
   if (event.type == sf::Event::KeyPressed) {
+    if (event.key.code == sf::Keyboard::F10) {
+      settingsMenuOpen_ = !settingsMenuOpen_;
+      draggingZoomSlider_ = false;
+      updateSettingsLayout();
+      return;
+    }
+    if (settingsMenuOpen_ && event.key.code == sf::Keyboard::Escape) {
+      settingsMenuOpen_ = false;
+      draggingZoomSlider_ = false;
+      return;
+    }
+    if (settingsMenuOpen_) {
+      return;
+    }
     if (event.key.code == sf::Keyboard::Escape) {
       leaveWorldSession();
       screen_ = ScreenState::Auth;
@@ -411,6 +498,20 @@ void GameClient::handleWorldEvent(const sf::Event& event) {
       tryInteractNearest();
       return;
     }
+  }
+  if (settingsMenuOpen_ && event.type == sf::Event::MouseMoved) {
+    handleSettingsMouseMoved(event.mouseMove.x);
+    return;
+  }
+  if (settingsMenuOpen_ && event.type == sf::Event::MouseButtonReleased &&
+      event.mouseButton.button == sf::Mouse::Left) {
+    handleSettingsMouseReleased();
+    return;
+  }
+  if (settingsMenuOpen_ && event.type == sf::Event::MouseButtonPressed &&
+      event.mouseButton.button == sf::Mouse::Left) {
+    handleSettingsMousePressed(event.mouseButton.x, event.mouseButton.y);
+    return;
   }
   if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
     tryAttackNearest();
@@ -552,6 +653,9 @@ void GameClient::sendMoveCommand(int dx, int dy) {
 }
 
 void GameClient::updateMovement(float dt) {
+  if (settingsMenuOpen_) {
+    return;
+  }
   moveAccumulator_ += dt;
   if (moveAccumulator_ < 0.09f) {
     return;
@@ -1284,4 +1388,71 @@ void GameClient::renderWorldScreen() {
   for (auto it = snapshot.errors.rbegin(); it != snapshot.errors.rend() && line < 3; ++it, ++line) {
     drawLabel(*it, 360, 20 + static_cast<float>(line) * 20.0f, 16, sf::Color(255, 125, 110));
   }
+
+  if (settingsMenuOpen_) {
+    renderSettingsMenu();
+  }
+}
+
+void GameClient::renderSettingsMenu() {
+  updateSettingsLayout();
+
+  const sf::Vector2u size = window_.getSize();
+  sf::RectangleShape dimmer(sf::Vector2f(static_cast<float>(size.x), static_cast<float>(size.y)));
+  dimmer.setPosition(0.0f, 0.0f);
+  dimmer.setFillColor(sf::Color(8, 10, 16, 155));
+  window_.draw(dimmer);
+
+  sf::RectangleShape panel(sf::Vector2f(settingsPanelRect_.width, settingsPanelRect_.height));
+  panel.setPosition(settingsPanelRect_.left, settingsPanelRect_.top);
+  panel.setFillColor(sf::Color(24, 28, 40, 240));
+  panel.setOutlineThickness(2.0f);
+  panel.setOutlineColor(sf::Color(186, 200, 230, 210));
+  window_.draw(panel);
+
+  drawLabel("Settings (F10)", settingsPanelRect_.left + 20.0f, settingsPanelRect_.top + 16.0f, 24,
+            sf::Color(232, 238, 255));
+  drawLabel("Viewport presets", settingsPanelRect_.left + 22.0f, settingsPanelRect_.top + 48.0f, 16,
+            sf::Color(188, 199, 224));
+
+  const auto drawPresetButton = [this](const sf::FloatRect& rect, const std::string& label) {
+    sf::RectangleShape button(sf::Vector2f(rect.width, rect.height));
+    button.setPosition(rect.left, rect.top);
+    button.setFillColor(sf::Color(37, 44, 63, 250));
+    button.setOutlineThickness(1.0f);
+    button.setOutlineColor(sf::Color(112, 126, 158, 230));
+    window_.draw(button);
+    drawLabel(label, rect.left + 12.0f, rect.top + 8.0f, 18, sf::Color(228, 235, 248));
+  };
+
+  drawPresetButton(viewportPresetA_, "1920x1080");
+  drawPresetButton(viewportPresetB_, "1280x768");
+
+  drawLabel("Camera Zoom", settingsPanelRect_.left + 22.0f, settingsPanelRect_.top + 134.0f, 16,
+            sf::Color(188, 199, 224));
+  char zoomText[16];
+  std::snprintf(zoomText, sizeof(zoomText), "%.2f", settingsZoom_);
+  drawLabel(zoomText, settingsPanelRect_.left + settingsPanelRect_.width - 70.0f, settingsPanelRect_.top + 134.0f,
+            16, sf::Color(228, 235, 248));
+
+  sf::RectangleShape track(sf::Vector2f(zoomSliderTrackRect_.width, zoomSliderTrackRect_.height));
+  track.setPosition(zoomSliderTrackRect_.left, zoomSliderTrackRect_.top);
+  track.setFillColor(sf::Color(62, 74, 106, 220));
+  window_.draw(track);
+
+  const float filledWidth = std::max(0.0f, (settingsZoom_ - kMinZoom) / (kMaxZoom - kMinZoom) * zoomSliderTrackRect_.width);
+  sf::RectangleShape fill(sf::Vector2f(filledWidth, zoomSliderTrackRect_.height));
+  fill.setPosition(zoomSliderTrackRect_.left, zoomSliderTrackRect_.top);
+  fill.setFillColor(sf::Color(122, 208, 255, 240));
+  window_.draw(fill);
+
+  sf::RectangleShape knob(sf::Vector2f(zoomSliderKnobRect_.width, zoomSliderKnobRect_.height));
+  knob.setPosition(zoomSliderKnobRect_.left, zoomSliderKnobRect_.top);
+  knob.setFillColor(sf::Color(232, 241, 255, 245));
+  knob.setOutlineThickness(1.0f);
+  knob.setOutlineColor(sf::Color(86, 94, 128, 240));
+  window_.draw(knob);
+
+  drawLabel("Drag slider to adjust zoom in real-time", settingsPanelRect_.left + 22.0f, settingsPanelRect_.top + 206.0f,
+            14, sf::Color(162, 174, 202));
 }

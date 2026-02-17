@@ -32,6 +32,14 @@ void Renderer3D::resize(int width, int height) {
   viewportHeight_ = std::max(1, height);
 }
 
+void Renderer3D::setCameraZoom(float zoom) {
+  cameraZoom_ = std::clamp(zoom, 0.25f, 1.0f);
+}
+
+float Renderer3D::cameraZoom() const {
+  return cameraZoom_;
+}
+
 void Renderer3D::render(sf::RenderTarget& target, const WorldSnapshot& world, const sf::Font* font) {
   if (!spritesInitialized_) {
     spriteManager_.initialize();
