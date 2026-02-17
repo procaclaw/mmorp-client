@@ -8,6 +8,27 @@ float clamp01(float v) {
   return std::max(0.0f, std::min(1.0f, v));
 }
 
+int frameLeftForColumn(int column) {
+  return static_cast<int>(std::lround(static_cast<float>(column) * SpriteManager::kFrameWidth));
+}
+
+int frameTopForRow(int row) {
+  return static_cast<int>(std::lround(static_cast<float>(row) * SpriteManager::kFrameHeight));
+}
+
+int frameWidthForColumn(int column) {
+  return std::max(1, frameLeftForColumn(column + 1) - frameLeftForColumn(column));
+}
+
+int frameHeightForRow(int row) {
+  return std::max(1, frameTopForRow(row + 1) - frameTopForRow(row));
+}
+
+sf::IntRect spriteFrameRect(int column, int row) {
+  return sf::IntRect(frameLeftForColumn(column), frameTopForRow(row), frameWidthForColumn(column),
+                     frameHeightForRow(row));
+}
+
 void drawName(sf::RenderTarget& target, const sf::Font* font, const std::string& name, sf::Vector2f center,
               unsigned size, const sf::Color& color) {
   if (font == nullptr || name.empty()) {
@@ -124,14 +145,11 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
     const sf::Vector2f center((npc.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (npc.renderY + 0.5f) * static_cast<float>(world.tileSize));
     sprite.setTexture(spriteManager_.npcSheet());
-    sprite.setTextureRect(sf::IntRect(animationColumn(moving) * static_cast<int>(SpriteManager::kSpriteSize),
-                                      rowForDirection(direction) * static_cast<int>(SpriteManager::kSpriteSize),
-                                      static_cast<int>(SpriteManager::kSpriteSize),
-                                      static_cast<int>(SpriteManager::kSpriteSize)));
-    sprite.setOrigin(static_cast<float>(SpriteManager::kSpriteSize) * 0.5f,
-                     static_cast<float>(SpriteManager::kSpriteSize) * 0.5f);
+    const sf::IntRect frameRect = spriteFrameRect(animationColumn(moving), rowForDirection(direction));
+    sprite.setTextureRect(frameRect);
+    sprite.setOrigin(static_cast<float>(frameRect.width) * 0.5f, static_cast<float>(frameRect.height) * 0.5f);
     constexpr float npcSize = 22.0f;
-    const float npcScale = npcSize / static_cast<float>(SpriteManager::kSpriteSize);
+    const float npcScale = npcSize / static_cast<float>(frameRect.width);
     sprite.setScale(npcScale, npcScale);
     sprite.setColor(sf::Color::White);
     sprite.setPosition(center);
@@ -148,15 +166,11 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
     const sf::Vector2f center((mob.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (mob.renderY + 0.5f) * static_cast<float>(world.tileSize));
     sprite.setTexture(spriteManager_.mobSheet());
-    sprite.setTextureRect(
-        sf::IntRect(animationColumn(moving && mob.alive) * static_cast<int>(SpriteManager::kSpriteSize),
-                                      rowForDirection(direction) * static_cast<int>(SpriteManager::kSpriteSize),
-                                      static_cast<int>(SpriteManager::kSpriteSize),
-                                      static_cast<int>(SpriteManager::kSpriteSize)));
-    sprite.setOrigin(static_cast<float>(SpriteManager::kSpriteSize) * 0.5f,
-                     static_cast<float>(SpriteManager::kSpriteSize) * 0.5f);
+    const sf::IntRect frameRect = spriteFrameRect(animationColumn(moving && mob.alive), rowForDirection(direction));
+    sprite.setTextureRect(frameRect);
+    sprite.setOrigin(static_cast<float>(frameRect.width) * 0.5f, static_cast<float>(frameRect.height) * 0.5f);
     constexpr float mobSize = 20.0f;
-    const float mobScale = mobSize / static_cast<float>(SpriteManager::kSpriteSize);
+    const float mobScale = mobSize / static_cast<float>(frameRect.width);
     sprite.setScale(mobScale, mobScale);
     sprite.setColor(mob.alive ? sf::Color::White : sf::Color(122, 122, 122));
     sprite.setPosition(center);
@@ -178,14 +192,11 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
     const sf::Vector2f center((player.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (player.renderY + 0.5f) * static_cast<float>(world.tileSize));
     sprite.setTexture(spriteManager_.playerSheet());
-    sprite.setTextureRect(sf::IntRect(animationColumn(moving) * static_cast<int>(SpriteManager::kSpriteSize),
-                                      rowForDirection(direction) * static_cast<int>(SpriteManager::kSpriteSize),
-                                      static_cast<int>(SpriteManager::kSpriteSize),
-                                      static_cast<int>(SpriteManager::kSpriteSize)));
-    sprite.setOrigin(static_cast<float>(SpriteManager::kSpriteSize) * 0.5f,
-                     static_cast<float>(SpriteManager::kSpriteSize) * 0.5f);
+    const sf::IntRect frameRect = spriteFrameRect(animationColumn(moving), rowForDirection(direction));
+    sprite.setTextureRect(frameRect);
+    sprite.setOrigin(static_cast<float>(frameRect.width) * 0.5f, static_cast<float>(frameRect.height) * 0.5f);
     constexpr float playerSize = 24.0f;
-    const float playerScale = playerSize / static_cast<float>(SpriteManager::kSpriteSize);
+    const float playerScale = playerSize / static_cast<float>(frameRect.width);
     sprite.setScale(playerScale, playerScale);
     sprite.setColor(isSelf ? sf::Color(255, 236, 122) : sf::Color(235, 235, 255));
     sprite.setPosition(center);

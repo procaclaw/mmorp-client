@@ -14,8 +14,10 @@ enum class SpriteSheetDirection : std::uint8_t { Front = 0, Left = 1, Diagonal =
 class SpriteManager {
  public:
   static constexpr unsigned kSpriteSize = 64;
-  static constexpr unsigned kSheetColumns = 22;
-  static constexpr unsigned kSheetRows = 12;
+  static constexpr unsigned kSheetColumns = 10;
+  static constexpr unsigned kSheetRows = 4;
+  static constexpr float kFrameWidth = 140.8f;
+  static constexpr float kFrameHeight = 192.0f;
   static constexpr unsigned kIdleStartColumn = 0;
   static constexpr unsigned kIdleFrameCount = 4;
   static constexpr unsigned kWalkStartColumn = 4;
@@ -26,8 +28,8 @@ class SpriteManager {
   static constexpr unsigned kHurtFrameCount = 4;
   static constexpr unsigned kDeathStartColumn = 20;
   static constexpr unsigned kDeathFrameCount = 2;
-  static constexpr unsigned kSheetWidth = kSpriteSize * kSheetColumns;
-  static constexpr unsigned kSheetHeight = kSpriteSize * kSheetRows;
+  static constexpr unsigned kSheetWidth = 1408;
+  static constexpr unsigned kSheetHeight = 768;
 
   bool initialize(const std::string& spritesDirectory = "assets/sprites");
 

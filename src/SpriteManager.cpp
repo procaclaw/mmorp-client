@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <string>
 
@@ -37,6 +38,26 @@ unsigned frameForColumn(unsigned col) {
     return col - SpriteManager::kDeathStartColumn;
   }
   return 0;
+}
+
+unsigned frameLeft(unsigned frameX) {
+  return static_cast<unsigned>(std::lround(static_cast<float>(frameX) * SpriteManager::kFrameWidth));
+}
+
+unsigned frameTop(unsigned frameY) {
+  return static_cast<unsigned>(std::lround(static_cast<float>(frameY) * SpriteManager::kFrameHeight));
+}
+
+unsigned frameWidth(unsigned frameX) {
+  const unsigned left = frameLeft(frameX);
+  const unsigned right = frameLeft(frameX + 1);
+  return std::max(1u, right - left);
+}
+
+unsigned frameHeight(unsigned frameY) {
+  const unsigned top = frameTop(frameY);
+  const unsigned bottom = frameTop(frameY + 1);
+  return std::max(1u, bottom - top);
 }
 }  // namespace
 
@@ -142,11 +163,18 @@ void SpriteManager::fillRect(std::vector<sf::Uint8>& pixels, unsigned x, unsigne
 
 void SpriteManager::blitFrame(std::vector<sf::Uint8>& sheet, unsigned frameX, unsigned frameY,
                               const std::vector<sf::Uint8>& framePixels) {
-  for (unsigned y = 0; y < kSpriteSize; ++y) {
-    for (unsigned x = 0; x < kSpriteSize; ++x) {
-      const std::size_t src = static_cast<std::size_t>((y * kSpriteSize + x) * 4);
-      const unsigned destX = frameX * kSpriteSize + x;
-      const unsigned destY = frameY * kSpriteSize + y;
+  const unsigned destLeft = frameLeft(frameX);
+  const unsigned destTop = frameTop(frameY);
+  const unsigned destWidth = frameWidth(frameX);
+  const unsigned destHeight = frameHeight(frameY);
+
+  for (unsigned y = 0; y < destHeight; ++y) {
+    for (unsigned x = 0; x < destWidth; ++x) {
+      const unsigned srcX = std::min(kSpriteSize - 1, (x * kSpriteSize) / destWidth);
+      const unsigned srcY = std::min(kSpriteSize - 1, (y * kSpriteSize) / destHeight);
+      const std::size_t src = static_cast<std::size_t>((srcY * kSpriteSize + srcX) * 4);
+      const unsigned destX = destLeft + x;
+      const unsigned destY = destTop + y;
       const std::size_t dst = static_cast<std::size_t>((destY * kSheetWidth + destX) * 4);
       sheet[dst + 0] = framePixels[src + 0];
       sheet[dst + 1] = framePixels[src + 1];
