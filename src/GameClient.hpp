@@ -17,7 +17,7 @@ class GameClient {
   void run();
 
  private:
-  enum class ScreenState { Auth, CharacterSelect, World };
+  enum class ScreenState { Auth, CharacterSelect, CharacterCreate, World };
   enum class AuthMode { Login, Register };
   enum class AuthField { Username, Password };
 
@@ -27,10 +27,12 @@ class GameClient {
 
   void renderAuthScreen();
   void renderCharacterSelectScreen();
+  void renderCharacterCreateScreen();
   void renderWorldScreen();
 
   void handleAuthEvent(const sf::Event& event);
   void handleCharacterSelectEvent(const sf::Event& event);
+  void handleCharacterCreateEvent(const sf::Event& event);
   void handleWorldEvent(const sf::Event& event);
 
   void submitAuth();
@@ -68,6 +70,9 @@ class GameClient {
   std::vector<CharacterInfo> characters_;
   std::size_t selectedCharacterIndex_ = 0;
   std::string selectedCharacterId_;
+  std::string createCharacterName_;
+  std::size_t createClassIndex_ = 0;
+  std::size_t localCharacterCounter_ = 1;
 
   WorldState world_;
   bool joinSent_ = false;
