@@ -147,6 +147,7 @@ add_executable(mmorp_client
   src/main.cpp
   src/GameClient.cpp
   src/Renderer3D.cpp
+  src/SpriteManager.cpp
   src/WebSocketClient.cpp
   src/HttpAuthClient.cpp
 )

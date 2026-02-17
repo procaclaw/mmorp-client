@@ -1,22 +1,9 @@
 #include "Renderer3D.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
-sf::Color tileColor(TileType t) {
-  switch (t) {
-    case TileType::Grass:
-      return sf::Color(78, 148, 73);
-    case TileType::Water:
-      return sf::Color(56, 116, 191);
-    case TileType::Wall:
-      return sf::Color(120, 122, 126);
-    case TileType::Forest:
-      return sf::Color(38, 98, 40);
-  }
-  return sf::Color(100, 120, 100);
-}
-
 float clamp01(float v) {
   return std::max(0.0f, std::min(1.0f, v));
 }
@@ -46,6 +33,11 @@ void Renderer3D::resize(int width, int height) {
 }
 
 void Renderer3D::render(sf::RenderTarget& target, const WorldSnapshot& world, const sf::Font* font) {
+  if (!spritesInitialized_) {
+    spriteManager_.initialize();
+    spritesInitialized_ = true;
+  }
+
   sf::View worldView;
   worldView.setSize(static_cast<float>(viewportWidth_), static_cast<float>(viewportHeight_));
 
@@ -74,12 +66,13 @@ void Renderer3D::render(sf::RenderTarget& target, const WorldSnapshot& world, co
 }
 
 void Renderer3D::drawTileLayer(sf::RenderTarget& target, const WorldSnapshot& world) const {
-  sf::RectangleShape tile;
-  tile.setSize(sf::Vector2f(static_cast<float>(world.tileSize), static_cast<float>(world.tileSize)));
+  sf::Sprite tile;
+  const float tileScale = static_cast<float>(world.tileSize) / static_cast<float>(SpriteManager::kSpriteSize);
+  tile.setScale(tileScale, tileScale);
   for (int y = 0; y < world.height; ++y) {
     for (int x = 0; x < world.width; ++x) {
       const TileType type = world.tiles[static_cast<std::size_t>(y * world.width + x)];
-      tile.setFillColor(tileColor(type));
+      tile.setTexture(spriteManager_.tile(type));
       tile.setPosition(static_cast<float>(x * world.tileSize), static_cast<float>(y * world.tileSize));
       target.draw(tile);
     }
@@ -104,27 +97,35 @@ void Renderer3D::drawGrid(sf::RenderTarget& target, const WorldSnapshot& world) 
 }
 
 void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& world, const sf::Font* font) const {
+  sf::Sprite sprite;
+
   for (const auto& [_, npc] : world.npcs) {
-    sf::CircleShape body(9.0f);
-    body.setFillColor(sf::Color(100, 240, 245));
-    body.setOutlineColor(sf::Color(60, 100, 150));
-    body.setOutlineThickness(2.0f);
-    body.setOrigin(9.0f, 9.0f);
     const sf::Vector2f center((npc.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (npc.renderY + 0.5f) * static_cast<float>(world.tileSize));
-    body.setPosition(center);
-    target.draw(body);
+    sprite.setTexture(spriteManager_.npc());
+    sprite.setOrigin(static_cast<float>(SpriteManager::kSpriteSize) * 0.5f,
+                     static_cast<float>(SpriteManager::kSpriteSize) * 0.5f);
+    constexpr float npcSize = 22.0f;
+    const float npcScale = npcSize / static_cast<float>(SpriteManager::kSpriteSize);
+    sprite.setScale(npcScale, npcScale);
+    sprite.setColor(sf::Color::White);
+    sprite.setPosition(center);
+    target.draw(sprite);
     drawName(target, font, npc.name, sf::Vector2f(center.x, center.y - 16.0f), 12, sf::Color::White);
   }
 
   for (const auto& [_, mob] : world.mobs) {
-    sf::CircleShape body(10.0f, 3);
-    body.setFillColor(mob.alive ? sf::Color(220, 58, 58) : sf::Color(95, 52, 52));
-    body.setOrigin(10.0f, 10.0f);
     const sf::Vector2f center((mob.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (mob.renderY + 0.5f) * static_cast<float>(world.tileSize));
-    body.setPosition(center);
-    target.draw(body);
+    sprite.setTexture(spriteManager_.mob(mob.alive));
+    sprite.setOrigin(static_cast<float>(SpriteManager::kSpriteSize) * 0.5f,
+                     static_cast<float>(SpriteManager::kSpriteSize) * 0.5f);
+    constexpr float mobSize = 20.0f;
+    const float mobScale = mobSize / static_cast<float>(SpriteManager::kSpriteSize);
+    sprite.setScale(mobScale, mobScale);
+    sprite.setColor(sf::Color::White);
+    sprite.setPosition(center);
+    target.draw(sprite);
     if (mob.hp < mob.maxHp) {
       drawHealthBar(target, sf::Vector2f(center.x, center.y - 16.0f), 22.0f,
                     static_cast<float>(mob.hp) / std::max(1.0f, static_cast<float>(mob.maxHp)));
@@ -133,15 +134,17 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
 
   for (const auto& [id, player] : world.players) {
     const bool isSelf = id == world.localPlayerId;
-    sf::CircleShape body(11.0f);
-    body.setFillColor(isSelf ? sf::Color(240, 217, 88) : sf::Color(230, 230, 255));
-    body.setOutlineColor(isSelf ? sf::Color(255, 166, 45) : sf::Color(120, 122, 160));
-    body.setOutlineThickness(2.0f);
-    body.setOrigin(11.0f, 11.0f);
     const sf::Vector2f center((player.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (player.renderY + 0.5f) * static_cast<float>(world.tileSize));
-    body.setPosition(center);
-    target.draw(body);
+    sprite.setTexture(spriteManager_.player(directionForPlayer(player)));
+    sprite.setOrigin(static_cast<float>(SpriteManager::kSpriteSize) * 0.5f,
+                     static_cast<float>(SpriteManager::kSpriteSize) * 0.5f);
+    constexpr float playerSize = 24.0f;
+    const float playerScale = playerSize / static_cast<float>(SpriteManager::kSpriteSize);
+    sprite.setScale(playerScale, playerScale);
+    sprite.setColor(isSelf ? sf::Color(255, 236, 122) : sf::Color(235, 235, 255));
+    sprite.setPosition(center);
+    target.draw(sprite);
 
     drawHealthBar(target, sf::Vector2f(center.x, center.y - 19.0f), 28.0f,
                   static_cast<float>(player.hp) / std::max(1.0f, static_cast<float>(player.maxHp)));
@@ -162,6 +165,18 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
                      (fx.worldY + 0.5f) * static_cast<float>(world.tileSize) - (1.2f - fx.ttl) * 26.0f);
     target.draw(text);
   }
+}
+
+FacingDirection Renderer3D::directionForPlayer(const PlayerState& player) {
+  const float dx = player.renderX - static_cast<float>(player.x);
+  const float dy = player.renderY - static_cast<float>(player.y);
+  if (std::abs(dx) > std::abs(dy) && std::abs(dx) > 0.05f) {
+    return dx > 0.0f ? FacingDirection::East : FacingDirection::West;
+  }
+  if (std::abs(dy) > 0.05f) {
+    return dy > 0.0f ? FacingDirection::South : FacingDirection::North;
+  }
+  return FacingDirection::South;
 }
 
 void Renderer3D::drawMinimap(sf::RenderTarget& target, const WorldSnapshot& world) const {
