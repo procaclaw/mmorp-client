@@ -292,6 +292,9 @@ void GameClient::handleCharacterSelectEvent(const sf::Event& event) {
   } else if (event.key.code == sf::Keyboard::Right || event.key.code == sf::Keyboard::D) {
     selectedCharacterIndex_ = (selectedCharacterIndex_ + 1) % characters_.size();
   } else if (event.key.code == sf::Keyboard::Enter) {
+    if (!characters_.empty()) {
+      selectedCharacterId_ = characters_[selectedCharacterIndex_].id;
+    }
     startWorldSession();
   }
 }
@@ -327,21 +330,32 @@ void GameClient::submitAuth() {
     return;
   }
   jwt_ = result.token;
-  statusText_ = "Authenticated. Choose your class.";
+  
+  // Fetch characters from server
+  characters_ = authClient_.fetchCharacters(jwt_);
+  if (characters_.empty()) {
+    statusText_ = "No characters found. Create one via API.";
+    return;
+  }
+  selectedCharacterId_ = characters_[0].id;
+  
+  statusText_ = "Select character (Left/Right)";
   screen_ = ScreenState::CharacterSelect;
 }
 
 void GameClient::startWorldSession() {
   leaveWorldSession();
 
+  const CharacterInfo& selected = characters_[selectedCharacterIndex_];
+  
   {
     std::lock_guard<std::mutex> lock(world_.mutex);
     world_.data = WorldSnapshot{};
-    world_.data.localPlayerId = username_;
+    world_.data.localPlayerId = selected.id;
     PlayerState self;
-    self.id = username_;
-    self.name = username_;
-    self.className = characters_[selectedCharacterIndex_];
+    self.id = selected.id;
+    self.name = selected.name;
+    self.className = selected.className;
     world_.data.players[self.id] = self;
   }
 
@@ -391,15 +405,16 @@ void GameClient::sendJoinIfNeeded() {
   if (joinSent_ || !wsClient_.isConnected()) {
     return;
   }
+  const CharacterInfo& selected = characters_[selectedCharacterIndex_];
   json joinMsg{
       {"type", "join"},
-      {"character", characters_[selectedCharacterIndex_]},
-      {"class", characters_[selectedCharacterIndex_]},
-      {"name", username_},
+      {"character_id", selected.id},
+      {"name", selected.name},
+      {"class", selected.className},
   };
   wsClient_.sendText(joinMsg.dump());
   joinSent_ = true;
-  std::printf("[client] join sent for %s\n", username_.c_str());
+  std::printf("[client] join sent for %s (id: %s)\n", selected.name.c_str(), selected.id.c_str());
 }
 
 void GameClient::sendMoveCommand(int dx, int dy) {
@@ -614,9 +629,9 @@ void GameClient::parseAndApplyMessage(const std::string& raw) {
 
         if (data.players.find(data.localPlayerId) == data.players.end()) {
           PlayerState self;
-          self.id = data.localPlayerId.empty() ? username_ : data.localPlayerId;
-          self.name = username_;
-          self.className = characters_[selectedCharacterIndex_];
+          self.id = data.localPlayerId.empty() ? (characters_.empty() ? username_ : characters_[selectedCharacterIndex_].id) : data.localPlayerId;
+          self.name = characters_.empty() ? username_ : characters_[selectedCharacterIndex_].name;
+          self.className = characters_.empty() ? "unknown" : characters_[selectedCharacterIndex_].className;
           upsertEntity(data.players, self);
         }
       }
@@ -818,7 +833,8 @@ void GameClient::renderCharacterSelectScreen() {
 
   for (std::size_t i = 0; i < characters_.size(); ++i) {
     const bool selected = i == selectedCharacterIndex_;
-    drawLabel(characters_[i], 60.0f + static_cast<float>(i) * 220.0f, 180.0f, 30,
+    const std::string display = characters_[i].name + " (" + characters_[i].className + ")";
+    drawLabel(display, 60.0f + static_cast<float>(i) * 220.0f, 180.0f, 30,
               selected ? sf::Color(245, 205, 120) : sf::Color(210, 210, 220));
   }
 

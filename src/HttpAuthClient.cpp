@@ -93,3 +93,34 @@ AuthResult HttpAuthClient::submit(const std::string& path, const std::string& us
     return AuthResult{false, "", "Invalid auth response JSON"};
   }
 }
+
+std::vector<CharacterInfo> HttpAuthClient::fetchCharacters(const std::string& jwt) {
+  std::vector<CharacterInfo> chars;
+  httplib::Client client(host_, port_);
+  client.set_connection_timeout(3, 0);
+  client.set_read_timeout(5, 0);
+
+  auto res = client.Get("/v1/characters", {{"Authorization", "Bearer " + jwt}});
+
+  if (!res || res->status != 200) {
+    return chars;
+  }
+
+  try {
+    json body = json::parse(res->body);
+    if (body.contains("items") && body["items"].is_array()) {
+      for (const auto& item : body["items"]) {
+        CharacterInfo ci;
+        ci.id = item.value("id", "");
+        ci.name = item.value("name", "");
+        ci.className = item.value("class", "");
+        if (!ci.id.empty()) {
+          chars.push_back(ci);
+        }
+      }
+    }
+  } catch (...) {
+    // ignore parse errors
+  }
+  return chars;
+}

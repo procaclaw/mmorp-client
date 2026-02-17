@@ -65,8 +65,9 @@ class GameClient {
   std::string jwt_;
   std::string statusText_ = "Enter username and password";
 
-  std::vector<std::string> characters_{"Warrior", "Mage", "Rogue"};
+  std::vector<CharacterInfo> characters_;
   std::size_t selectedCharacterIndex_ = 0;
+  std::string selectedCharacterId_;
 
   WorldState world_;
   bool joinSent_ = false;
