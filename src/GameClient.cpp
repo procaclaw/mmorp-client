@@ -200,12 +200,36 @@ NpcState parseNpc(const json& j) {
   NpcState n;
   n.id = getStringField(j, {"id", "npcId", "name"}).value_or("");
   n.name = getStringField(j, {"name"}).value_or(n.id);
+  n.role = getStringField(j, {"role", "npc_role"}).value_or("");
+  n.portrait = getStringField(j, {"portrait", "npc_portrait"}).value_or("");
   const auto [x, y] = parsePosition2D(j);
   n.x = x;
   n.y = y;
   n.renderX = static_cast<float>(x);
   n.renderY = static_cast<float>(y);
   return n;
+}
+
+std::vector<DialogResponseState> parseDialogResponses(const json& node) {
+  std::vector<DialogResponseState> responses;
+  if (!node.contains("responses") || !node["responses"].is_array()) {
+    return responses;
+  }
+  responses.reserve(node["responses"].size());
+  for (const auto& entry : node["responses"]) {
+    if (!entry.is_object()) {
+      continue;
+    }
+    DialogResponseState resp;
+    resp.id = getStringField(entry, {"id"}).value_or("");
+    resp.text = getStringField(entry, {"text", "label", "name"}).value_or("");
+    resp.nextNodeId = getStringField(entry, {"next_node_id", "nextNodeId"}).value_or("");
+    resp.questTrigger = getStringField(entry, {"quest_trigger", "questTrigger"}).value_or("");
+    if (!resp.id.empty() && !resp.text.empty()) {
+      responses.push_back(resp);
+    }
+  }
+  return responses;
 }
 
 MobState parseMob(const json& j) {
@@ -407,6 +431,26 @@ bool GameClient::handleSettingsMousePressed(int x, int y) {
   return containsPoint(settingsPanelRect_, mouse);
 }
 
+bool GameClient::handleDialogMousePressed(int x, int y) {
+  DialogState dialogCopy;
+  {
+    std::lock_guard<std::mutex> lock(world_.mutex);
+    dialogCopy = world_.data.dialog;
+  }
+  if (!dialogCopy.active || dialogCopy.responses.empty()) {
+    return false;
+  }
+  const sf::Vector2f mouse(static_cast<float>(x), static_cast<float>(y));
+  const std::size_t count = std::min(dialogCopy.responses.size(), dialogOptionRects_.size());
+  for (std::size_t i = 0; i < count; ++i) {
+    if (dialogOptionRects_[i].contains(mouse)) {
+      sendDialogSelection(dialogCopy.npcId, dialogCopy.responses[i].id);
+      return true;
+    }
+  }
+  return false;
+}
+
 void GameClient::handleSettingsMouseMoved(int x) {
   if (!draggingZoomSlider_) {
     return;
@@ -566,6 +610,11 @@ void GameClient::handleCharacterCreateEvent(const sf::Event& event) {
 }
 
 void GameClient::handleWorldEvent(const sf::Event& event) {
+  const bool dialogActive = [&]() {
+    std::lock_guard<std::mutex> lock(world_.mutex);
+    return world_.data.dialog.active;
+  }();
+
   if (event.type == sf::Event::KeyPressed) {
     if (event.key.code == sf::Keyboard::F10) {
       settingsMenuOpen_ = !settingsMenuOpen_;
@@ -582,9 +631,16 @@ void GameClient::handleWorldEvent(const sf::Event& event) {
       return;
     }
     if (event.key.code == sf::Keyboard::Escape) {
+      if (dialogActive) {
+        world_.pushChat("Choose a response to end the conversation.");
+        return;
+      }
       leaveWorldSession();
       screen_ = ScreenState::Auth;
       statusText_ = "Disconnected from world";
+      return;
+    }
+    if (dialogActive) {
       return;
     }
     if (event.key.code == sf::Keyboard::Space) {
@@ -611,7 +667,17 @@ void GameClient::handleWorldEvent(const sf::Event& event) {
     return;
   }
   if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-    tryAttackNearest();
+    if (dialogActive && handleDialogMousePressed(event.mouseButton.x, event.mouseButton.y)) {
+      return;
+    }
+    if (!dialogActive) {
+      // Left click prefers NPC interaction when in range, then falls back to attack.
+      const std::uint64_t beforeInteract = lastInteractAtMs_;
+      tryInteractNearest();
+      if (lastInteractAtMs_ == beforeInteract) {
+        tryAttackNearest();
+      }
+    }
   }
 }
 
@@ -753,6 +819,12 @@ void GameClient::updateMovement(float dt) {
   if (settingsMenuOpen_) {
     return;
   }
+  {
+    std::lock_guard<std::mutex> lock(world_.mutex);
+    if (world_.data.dialog.active) {
+      return;
+    }
+  }
   moveAccumulator_ += dt;
   if (moveAccumulator_ < 0.09f) {
     return;
@@ -804,6 +876,12 @@ void GameClient::tryAttackNearest() {
   if (!wsClient_.isConnected()) {
     return;
   }
+  {
+    std::lock_guard<std::mutex> lock(world_.mutex);
+    if (world_.data.dialog.active) {
+      return;
+    }
+  }
   const std::uint64_t now = WorldState::nowMs();
   if (now - lastAttackAtMs_ < 220) {
     return;
@@ -846,11 +924,16 @@ void GameClient::tryInteractNearest() {
   if (!wsClient_.isConnected()) {
     return;
   }
+  {
+    std::lock_guard<std::mutex> lock(world_.mutex);
+    if (world_.data.dialog.active) {
+      return;
+    }
+  }
   const std::uint64_t now = WorldState::nowMs();
   if (now - lastInteractAtMs_ < 1000) {
     return;
   }
-  lastInteractAtMs_ = now;
 
   std::string targetNpcId;
   int selfX = 0;
@@ -877,8 +960,17 @@ void GameClient::tryInteractNearest() {
     return;
   }
 
+  lastInteractAtMs_ = now;
   json interactMsg{{"type", "interact"}, {"npcId", targetNpcId}, {"action", "talk"}};
   wsClient_.sendText(interactMsg.dump());
+}
+
+void GameClient::sendDialogSelection(const std::string& npcId, const std::string& responseId) {
+  if (!wsClient_.isConnected() || npcId.empty() || responseId.empty()) {
+    return;
+  }
+  json selectMsg{{"type", "dialog_select"}, {"npcId", npcId}, {"response_id", responseId}};
+  wsClient_.sendText(selectMsg.dump());
 }
 
 void GameClient::parseAndApplyMessage(const std::string& raw) {
@@ -1098,6 +1190,63 @@ void GameClient::parseAndApplyMessage(const std::string& raw) {
       world_.data.chatLines.push_back(ChatLine{id + " died", WorldState::nowMs()});
       while (world_.data.chatLines.size() > 12) {
         world_.data.chatLines.pop_front();
+      }
+      return;
+    }
+
+    if (type == "dialog_start" || type == "dialog_update") {
+      const json& node = (msg.contains("node") && msg["node"].is_object()) ? msg["node"] : msg;
+      DialogState dialog;
+      dialog.active = true;
+      dialog.npcId = getStringField(msg, {"npc_id", "npcId"}).value_or("");
+      dialog.npcName = getStringField(msg, {"npc_name", "npcName"}).value_or(dialog.npcId);
+      dialog.npcRole = getStringField(msg, {"npc_role", "npcRole"}).value_or("");
+      dialog.npcPortrait = getStringField(msg, {"npc_portrait", "npcPortrait"}).value_or("");
+      dialog.nodeId = getStringField(node, {"id", "node_id"}).value_or("");
+      dialog.text = getStringField(node, {"text", "message"}).value_or("");
+      dialog.responses = parseDialogResponses(node);
+
+      {
+        std::lock_guard<std::mutex> lock(world_.mutex);
+        // Fill missing metadata from world snapshot for stable UI.
+        if (auto npcIt = world_.data.npcs.find(dialog.npcId); npcIt != world_.data.npcs.end()) {
+          if (dialog.npcName.empty()) {
+            dialog.npcName = npcIt->second.name;
+          }
+          if (dialog.npcRole.empty()) {
+            dialog.npcRole = npcIt->second.role;
+          }
+          if (dialog.npcPortrait.empty()) {
+            dialog.npcPortrait = npcIt->second.portrait;
+          }
+        }
+        world_.data.dialog = dialog;
+      }
+      if (const auto questTrigger = getStringField(msg, {"quest_trigger", "questTrigger"}); questTrigger && !questTrigger->empty()) {
+        world_.pushChat("Quest triggered: " + *questTrigger);
+      }
+      return;
+    }
+
+    if (type == "dialog_end") {
+      std::string questTrigger = getStringField(msg, {"quest_trigger", "questTrigger"}).value_or("");
+      std::string npcName = getStringField(msg, {"npc_name", "npcName"}).value_or("");
+      if (npcName.empty()) {
+        const std::string npcId = getStringField(msg, {"npc_id", "npcId"}).value_or("");
+        std::lock_guard<std::mutex> lock(world_.mutex);
+        if (auto it = world_.data.npcs.find(npcId); it != world_.data.npcs.end()) {
+          npcName = it->second.name;
+        }
+      }
+      {
+        std::lock_guard<std::mutex> lock(world_.mutex);
+        world_.data.dialog = DialogState{};
+      }
+      if (!npcName.empty()) {
+        world_.pushChat("Conversation ended with " + npcName);
+      }
+      if (!questTrigger.empty()) {
+        world_.pushChat("Quest triggered: " + questTrigger);
       }
       return;
     }
@@ -1463,7 +1612,7 @@ void GameClient::renderWorldScreen() {
   const PlayerState* self = (localIt == snapshot.players.end()) ? nullptr : &localIt->second;
   drawLabel("Connection: " + snapshot.connectionStatus, 24, 20, 16, snapshot.connected ? sf::Color(130, 245, 150)
                                                                                           : sf::Color(255, 150, 120));
-  drawLabel("Controls: WASD/Arrows move, Space/Click attack, E interact, Esc exit", 24, 42, 14,
+  drawLabel("Controls: WASD/Arrows move, Space attack, E/Click talk, Esc exit", 24, 42, 14,
             sf::Color(220, 225, 235));
   if (self != nullptr) {
     drawLabel("Player: " + self->name + "  Class: " + self->className, 24, 66, 16, sf::Color::White);
@@ -1488,7 +1637,79 @@ void GameClient::renderWorldScreen() {
 
   if (settingsMenuOpen_) {
     renderSettingsMenu();
+    return;
   }
+  if (snapshot.dialog.active) {
+    renderDialogOverlay(snapshot);
+  }
+}
+
+void GameClient::renderDialogOverlay(const WorldSnapshot& snapshot) {
+  dialogOptionRects_.clear();
+  const DialogState& dialog = snapshot.dialog;
+  if (!dialog.active) {
+    return;
+  }
+
+  const sf::Vector2u windowSize = window_.getSize();
+  const float panelWidth = std::min(860.0f, static_cast<float>(windowSize.x) - 120.0f);
+  const float panelHeight = 300.0f;
+  const float panelX = (static_cast<float>(windowSize.x) - panelWidth) * 0.5f;
+  const float panelY = static_cast<float>(windowSize.y) - panelHeight - 38.0f;
+
+  sf::RectangleShape dimmer(sf::Vector2f(static_cast<float>(windowSize.x), static_cast<float>(windowSize.y)));
+  dimmer.setFillColor(sf::Color(8, 10, 16, 120));
+  window_.draw(dimmer);
+
+  sf::RectangleShape panel(sf::Vector2f(panelWidth, panelHeight));
+  panel.setPosition(panelX, panelY);
+  panel.setFillColor(sf::Color(20, 25, 35, 240));
+  panel.setOutlineThickness(2.0f);
+  panel.setOutlineColor(sf::Color(160, 178, 208, 220));
+  window_.draw(panel);
+
+  sf::RectangleShape portraitFrame(sf::Vector2f(112.0f, 112.0f));
+  portraitFrame.setPosition(panelX + 20.0f, panelY + 20.0f);
+  const std::string role = toLowerCopy(dialog.npcRole);
+  const bool merchant = role == "merchant";
+  portraitFrame.setFillColor(merchant ? sf::Color(70, 92, 128) : sf::Color(86, 72, 120));
+  portraitFrame.setOutlineThickness(2.0f);
+  portraitFrame.setOutlineColor(sf::Color(220, 228, 245, 220));
+  window_.draw(portraitFrame);
+
+  sf::CircleShape portrait(36.0f);
+  portrait.setPosition(panelX + 38.0f, panelY + 34.0f);
+  portrait.setFillColor(merchant ? sf::Color(220, 176, 120) : sf::Color(166, 210, 145));
+  window_.draw(portrait);
+
+  const char portraitGlyph = merchant ? '$' : '!';
+  drawLabel(std::string(1, portraitGlyph), panelX + 67.0f, panelY + 48.0f, 34, sf::Color(28, 32, 40));
+
+  const std::string npcName = dialog.npcName.empty() ? "NPC" : dialog.npcName;
+  drawLabel(npcName, panelX + 150.0f, panelY + 24.0f, 28, sf::Color(240, 245, 255));
+  drawLabel(dialog.text, panelX + 150.0f, panelY + 68.0f, 19, sf::Color(220, 225, 238));
+  drawLabel("Choose a response:", panelX + 24.0f, panelY + 150.0f, 17, sf::Color(184, 198, 220));
+
+  const float optionWidth = panelWidth - 48.0f;
+  const float optionHeight = 36.0f;
+  for (std::size_t i = 0; i < dialog.responses.size(); ++i) {
+    const float y = panelY + 180.0f + static_cast<float>(i) * 42.0f;
+    sf::FloatRect rect(panelX + 24.0f, y, optionWidth, optionHeight);
+    dialogOptionRects_.push_back(rect);
+
+    sf::RectangleShape optionBg(sf::Vector2f(rect.width, rect.height));
+    optionBg.setPosition(rect.left, rect.top);
+    optionBg.setFillColor(sf::Color(38, 46, 66, 245));
+    optionBg.setOutlineThickness(1.0f);
+    optionBg.setOutlineColor(sf::Color(120, 138, 170, 220));
+    window_.draw(optionBg);
+
+    drawLabel(std::to_string(i + 1) + ". " + dialog.responses[i].text, rect.left + 10.0f, rect.top + 7.0f, 18,
+              sf::Color(234, 240, 252));
+  }
+
+  drawLabel("Select a response to continue", panelX + panelWidth - 260.0f, panelY + panelHeight - 26.0f, 14,
+            sf::Color(170, 182, 204));
 }
 
 void GameClient::renderSettingsMenu() {

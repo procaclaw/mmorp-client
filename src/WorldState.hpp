@@ -29,10 +29,30 @@ struct PlayerState {
 struct NpcState {
   std::string id;
   std::string name;
+  std::string role;
+  std::string portrait;
   int x = 0;
   int y = 0;
   float renderX = 0.0f;
   float renderY = 0.0f;
+};
+
+struct DialogResponseState {
+  std::string id;
+  std::string text;
+  std::string nextNodeId;
+  std::string questTrigger;
+};
+
+struct DialogState {
+  bool active = false;
+  std::string npcId;
+  std::string npcName;
+  std::string npcRole;
+  std::string npcPortrait;
+  std::string nodeId;
+  std::string text;
+  std::vector<DialogResponseState> responses;
 };
 
 struct MobState {
@@ -77,6 +97,7 @@ struct WorldSnapshot {
   std::deque<FloatingCombatText> combatTexts;
   std::deque<ChatLine> chatLines;
   std::deque<std::string> errors;
+  DialogState dialog;
 
   std::string connectionStatus = "Disconnected";
   bool connected = false;

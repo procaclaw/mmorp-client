@@ -30,6 +30,7 @@ class GameClient {
   void renderCharacterCreateScreen();
   void renderWorldScreen();
   void renderSettingsMenu();
+  void renderDialogOverlay(const WorldSnapshot& snapshot);
 
   void handleAuthEvent(const sf::Event& event);
   void handleCharacterSelectEvent(const sf::Event& event);
@@ -37,6 +38,7 @@ class GameClient {
   void handleWorldEvent(const sf::Event& event);
   void updateSettingsLayout();
   bool handleSettingsMousePressed(int x, int y);
+  bool handleDialogMousePressed(int x, int y);
   void handleSettingsMouseMoved(int x);
   void handleSettingsMouseReleased();
   void applyViewportPreset(unsigned width, unsigned height);
@@ -53,6 +55,7 @@ class GameClient {
   void updateCombatEffects(float dt);
   void tryAttackNearest();
   void tryInteractNearest();
+  void sendDialogSelection(const std::string& npcId, const std::string& responseId);
   void sendMoveCommand(int dx, int dy);
   void parseAndApplyMessage(const std::string& raw);
   void processNetworkMessages();
@@ -100,6 +103,7 @@ class GameClient {
   sf::FloatRect viewportPresetB_;
   sf::FloatRect zoomSliderTrackRect_;
   sf::FloatRect zoomSliderKnobRect_;
+  std::vector<sf::FloatRect> dialogOptionRects_;
 
   sf::Font font_;
   bool fontLoaded_ = false;
