@@ -43,6 +43,10 @@ float Renderer3D::cameraZoom() const {
 void Renderer3D::render(sf::RenderTarget& target, const WorldSnapshot& world, const sf::Font* font) {
   if (!spritesInitialized_) {
     spriteManager_.initialize();
+    animationClock_.restart();
+    playerDirectionCache_.clear();
+    npcDirectionCache_.clear();
+    mobDirectionCache_.clear();
     spritesInitialized_ = true;
   }
 
@@ -112,9 +116,18 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
   states.blendMode = sf::BlendAlpha;
 
   for (const auto& [_, npc] : world.npcs) {
+    const float dx = npc.renderX - static_cast<float>(npc.x);
+    const float dy = npc.renderY - static_cast<float>(npc.y);
+    const bool moving = isMoving(dx, dy);
+    const auto direction = resolveDirection(npc.id, npc.renderX, npc.renderY, npc.x, npc.y, npcDirectionCache_);
+
     const sf::Vector2f center((npc.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (npc.renderY + 0.5f) * static_cast<float>(world.tileSize));
-    sprite.setTexture(spriteManager_.npc());
+    sprite.setTexture(spriteManager_.npcSheet());
+    sprite.setTextureRect(sf::IntRect(animationFrame(moving) * static_cast<int>(SpriteManager::kSpriteSize),
+                                      rowForDirection(direction) * static_cast<int>(SpriteManager::kSpriteSize),
+                                      static_cast<int>(SpriteManager::kSpriteSize),
+                                      static_cast<int>(SpriteManager::kSpriteSize)));
     sprite.setOrigin(static_cast<float>(SpriteManager::kSpriteSize) * 0.5f,
                      static_cast<float>(SpriteManager::kSpriteSize) * 0.5f);
     constexpr float npcSize = 22.0f;
@@ -127,15 +140,24 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
   }
 
   for (const auto& [_, mob] : world.mobs) {
+    const float dx = mob.renderX - static_cast<float>(mob.x);
+    const float dy = mob.renderY - static_cast<float>(mob.y);
+    const bool moving = isMoving(dx, dy);
+    const auto direction = resolveDirection(mob.id, mob.renderX, mob.renderY, mob.x, mob.y, mobDirectionCache_);
+
     const sf::Vector2f center((mob.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (mob.renderY + 0.5f) * static_cast<float>(world.tileSize));
-    sprite.setTexture(spriteManager_.mob(mob.alive));
+    sprite.setTexture(spriteManager_.mobSheet());
+    sprite.setTextureRect(sf::IntRect(animationFrame(moving && mob.alive) * static_cast<int>(SpriteManager::kSpriteSize),
+                                      rowForDirection(direction) * static_cast<int>(SpriteManager::kSpriteSize),
+                                      static_cast<int>(SpriteManager::kSpriteSize),
+                                      static_cast<int>(SpriteManager::kSpriteSize)));
     sprite.setOrigin(static_cast<float>(SpriteManager::kSpriteSize) * 0.5f,
                      static_cast<float>(SpriteManager::kSpriteSize) * 0.5f);
     constexpr float mobSize = 20.0f;
     const float mobScale = mobSize / static_cast<float>(SpriteManager::kSpriteSize);
     sprite.setScale(mobScale, mobScale);
-    sprite.setColor(sf::Color::White);
+    sprite.setColor(mob.alive ? sf::Color::White : sf::Color(122, 122, 122));
     sprite.setPosition(center);
     target.draw(sprite, states);
     if (mob.hp < mob.maxHp) {
@@ -146,9 +168,19 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
 
   for (const auto& [id, player] : world.players) {
     const bool isSelf = id == world.localPlayerId;
+    const float dx = player.renderX - static_cast<float>(player.x);
+    const float dy = player.renderY - static_cast<float>(player.y);
+    const bool moving = isMoving(dx, dy);
+    const auto direction = resolveDirection(player.id, player.renderX, player.renderY, player.x, player.y,
+                                            playerDirectionCache_);
+
     const sf::Vector2f center((player.renderX + 0.5f) * static_cast<float>(world.tileSize),
                               (player.renderY + 0.5f) * static_cast<float>(world.tileSize));
-    sprite.setTexture(spriteManager_.player(directionForPlayer(player)));
+    sprite.setTexture(spriteManager_.playerSheet());
+    sprite.setTextureRect(sf::IntRect(animationFrame(moving) * static_cast<int>(SpriteManager::kSpriteSize),
+                                      rowForDirection(direction) * static_cast<int>(SpriteManager::kSpriteSize),
+                                      static_cast<int>(SpriteManager::kSpriteSize),
+                                      static_cast<int>(SpriteManager::kSpriteSize)));
     sprite.setOrigin(static_cast<float>(SpriteManager::kSpriteSize) * 0.5f,
                      static_cast<float>(SpriteManager::kSpriteSize) * 0.5f);
     constexpr float playerSize = 24.0f;
@@ -179,16 +211,70 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
   }
 }
 
-FacingDirection Renderer3D::directionForPlayer(const PlayerState& player) {
-  const float dx = player.renderX - static_cast<float>(player.x);
-  const float dy = player.renderY - static_cast<float>(player.y);
-  if (std::abs(dx) > std::abs(dy) && std::abs(dx) > 0.05f) {
-    return dx > 0.0f ? FacingDirection::East : FacingDirection::West;
+SpriteSheetDirection Renderer3D::directionFromDelta(float dx, float dy) {
+  constexpr float kThreshold = 0.05f;
+  if (std::abs(dx) > kThreshold && std::abs(dy) > kThreshold) {
+    return SpriteSheetDirection::Diagonal;
   }
-  if (std::abs(dy) > 0.05f) {
-    return dy > 0.0f ? FacingDirection::South : FacingDirection::North;
+  if (dy < -kThreshold) {
+    return SpriteSheetDirection::Back;
   }
-  return FacingDirection::South;
+  if (dy > kThreshold) {
+    return SpriteSheetDirection::Front;
+  }
+  if (dx < -kThreshold) {
+    return SpriteSheetDirection::Left;
+  }
+  if (dx > kThreshold) {
+    return SpriteSheetDirection::Diagonal;
+  }
+  return SpriteSheetDirection::Front;
+}
+
+bool Renderer3D::isMoving(float dx, float dy) {
+  constexpr float kThreshold = 0.05f;
+  return std::abs(dx) > kThreshold || std::abs(dy) > kThreshold;
+}
+
+SpriteSheetDirection Renderer3D::resolveDirection(const std::string& id, float renderX, float renderY, int gridX,
+                                                  int gridY,
+                                                  std::unordered_map<std::string, SpriteSheetDirection>& cache) const {
+  const float dx = renderX - static_cast<float>(gridX);
+  const float dy = renderY - static_cast<float>(gridY);
+  if (!isMoving(dx, dy)) {
+    const auto it = cache.find(id);
+    if (it != cache.end()) {
+      return it->second;
+    }
+    return SpriteSheetDirection::Front;
+  }
+
+  const auto direction = directionFromDelta(dx, dy);
+  cache[id] = direction;
+  return direction;
+}
+
+int Renderer3D::animationFrame(bool moving) const {
+  if (!moving) {
+    return 0;
+  }
+
+  const auto elapsedMs = animationClock_.getElapsedTime().asMilliseconds();
+  return static_cast<int>((elapsedMs / kAnimationFrameMs) % static_cast<sf::Int64>(SpriteManager::kWalkFrameCount));
+}
+
+int Renderer3D::rowForDirection(SpriteSheetDirection direction) {
+  switch (direction) {
+    case SpriteSheetDirection::Front:
+      return 0;
+    case SpriteSheetDirection::Left:
+      return 1;
+    case SpriteSheetDirection::Diagonal:
+      return 2;
+    case SpriteSheetDirection::Back:
+      return 3;
+  }
+  return 0;
 }
 
 void Renderer3D::drawMinimap(sf::RenderTarget& target, const WorldSnapshot& world) const {
