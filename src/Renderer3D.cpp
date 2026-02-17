@@ -75,6 +75,8 @@ void Renderer3D::render(sf::RenderTarget& target, const WorldSnapshot& world, co
 
 void Renderer3D::drawTileLayer(sf::RenderTarget& target, const WorldSnapshot& world) const {
   sf::Sprite tile;
+  sf::RenderStates states;
+  states.blendMode = sf::BlendAlpha;
   const float tileScale = static_cast<float>(world.tileSize) / static_cast<float>(SpriteManager::kSpriteSize);
   tile.setScale(tileScale, tileScale);
   for (int y = 0; y < world.height; ++y) {
@@ -82,7 +84,7 @@ void Renderer3D::drawTileLayer(sf::RenderTarget& target, const WorldSnapshot& wo
       const TileType type = world.tiles[static_cast<std::size_t>(y * world.width + x)];
       tile.setTexture(spriteManager_.tile(type));
       tile.setPosition(static_cast<float>(x * world.tileSize), static_cast<float>(y * world.tileSize));
-      target.draw(tile);
+      target.draw(tile, states);
     }
   }
 }
@@ -106,6 +108,8 @@ void Renderer3D::drawGrid(sf::RenderTarget& target, const WorldSnapshot& world) 
 
 void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& world, const sf::Font* font) const {
   sf::Sprite sprite;
+  sf::RenderStates states;
+  states.blendMode = sf::BlendAlpha;
 
   for (const auto& [_, npc] : world.npcs) {
     const sf::Vector2f center((npc.renderX + 0.5f) * static_cast<float>(world.tileSize),
@@ -118,7 +122,7 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
     sprite.setScale(npcScale, npcScale);
     sprite.setColor(sf::Color::White);
     sprite.setPosition(center);
-    target.draw(sprite);
+    target.draw(sprite, states);
     drawName(target, font, npc.name, sf::Vector2f(center.x, center.y - 16.0f), 12, sf::Color::White);
   }
 
@@ -133,7 +137,7 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
     sprite.setScale(mobScale, mobScale);
     sprite.setColor(sf::Color::White);
     sprite.setPosition(center);
-    target.draw(sprite);
+    target.draw(sprite, states);
     if (mob.hp < mob.maxHp) {
       drawHealthBar(target, sf::Vector2f(center.x, center.y - 16.0f), 22.0f,
                     static_cast<float>(mob.hp) / std::max(1.0f, static_cast<float>(mob.maxHp)));
@@ -152,7 +156,7 @@ void Renderer3D::drawEntities(sf::RenderTarget& target, const WorldSnapshot& wor
     sprite.setScale(playerScale, playerScale);
     sprite.setColor(isSelf ? sf::Color(255, 236, 122) : sf::Color(235, 235, 255));
     sprite.setPosition(center);
-    target.draw(sprite);
+    target.draw(sprite, states);
 
     drawHealthBar(target, sf::Vector2f(center.x, center.y - 19.0f), 28.0f,
                   static_cast<float>(player.hp) / std::max(1.0f, static_cast<float>(player.maxHp)));
