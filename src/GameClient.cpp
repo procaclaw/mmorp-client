@@ -1,6 +1,7 @@
 #include "GameClient.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -15,6 +16,48 @@
 using json = nlohmann::json;
 
 namespace {
+struct ClassArchetype {
+  const char* name;
+  sf::Color color;
+  sf::Color accent;
+  const char* description;
+  const char* stats;
+};
+
+constexpr std::array<ClassArchetype, 3> kClassArchetypes{{
+    {"Warrior", sf::Color(210, 72, 72), sf::Color(255, 180, 170), "Frontline fighter with high durability.",
+     "HP: High   Attack: Medium   Magic: Low"},
+    {"Mage", sf::Color(80, 125, 230), sf::Color(170, 205, 255), "Ranged spellcaster with burst damage.",
+     "HP: Low   Attack: High   Magic: Very High"},
+    {"Rogue", sf::Color(75, 180, 90), sf::Color(185, 240, 190), "Agile assassin focused on speed and crits.",
+     "HP: Medium   Attack: High   Magic: Low"},
+}};
+
+std::string toLowerCopy(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
+const ClassArchetype& archetypeFromClassName(const std::string& className) {
+  const std::string lowered = toLowerCopy(className);
+  for (const auto& archetype : kClassArchetypes) {
+    if (toLowerCopy(archetype.name) == lowered) {
+      return archetype;
+    }
+  }
+  return kClassArchetypes[0];
+}
+
+std::string trimName(const std::string& value) {
+  const auto begin = value.find_first_not_of(" \t\r\n");
+  if (begin == std::string::npos) {
+    return "";
+  }
+  const auto end = value.find_last_not_of(" \t\r\n");
+  return value.substr(begin, end - begin + 1);
+}
+
 std::string maskPassword(const std::string& p) {
   return std::string(p.size(), '*');
 }
@@ -251,6 +294,8 @@ void GameClient::processEvents() {
       handleAuthEvent(event);
     } else if (screen_ == ScreenState::CharacterSelect) {
       handleCharacterSelectEvent(event);
+    } else if (screen_ == ScreenState::CharacterCreate) {
+      handleCharacterCreateEvent(event);
     } else if (screen_ == ScreenState::World) {
       handleWorldEvent(event);
     }
@@ -287,15 +332,64 @@ void GameClient::handleCharacterSelectEvent(const sf::Event& event) {
   if (event.type != sf::Event::KeyPressed) {
     return;
   }
+  const std::size_t optionCount = characters_.size() + 1;
   if (event.key.code == sf::Keyboard::Left || event.key.code == sf::Keyboard::A) {
-    selectedCharacterIndex_ = (selectedCharacterIndex_ == 0) ? characters_.size() - 1 : selectedCharacterIndex_ - 1;
+    selectedCharacterIndex_ = (selectedCharacterIndex_ == 0) ? optionCount - 1 : selectedCharacterIndex_ - 1;
   } else if (event.key.code == sf::Keyboard::Right || event.key.code == sf::Keyboard::D) {
-    selectedCharacterIndex_ = (selectedCharacterIndex_ + 1) % characters_.size();
+    selectedCharacterIndex_ = (selectedCharacterIndex_ + 1) % optionCount;
   } else if (event.key.code == sf::Keyboard::Enter) {
-    if (!characters_.empty()) {
-      selectedCharacterId_ = characters_[selectedCharacterIndex_].id;
+    if (selectedCharacterIndex_ == characters_.size()) {
+      createCharacterName_.clear();
+      createClassIndex_ = 0;
+      statusText_ = "Create a new character";
+      screen_ = ScreenState::CharacterCreate;
+      return;
     }
+    selectedCharacterId_ = characters_[selectedCharacterIndex_].id;
     startWorldSession();
+  } else if (event.key.code == sf::Keyboard::Escape) {
+    screen_ = ScreenState::Auth;
+    statusText_ = "Back to login";
+  }
+}
+
+void GameClient::handleCharacterCreateEvent(const sf::Event& event) {
+  if (event.type == sf::Event::KeyPressed) {
+    if (event.key.code == sf::Keyboard::Left || event.key.code == sf::Keyboard::A) {
+      createClassIndex_ = (createClassIndex_ == 0) ? kClassArchetypes.size() - 1 : createClassIndex_ - 1;
+    } else if (event.key.code == sf::Keyboard::Right || event.key.code == sf::Keyboard::D) {
+      createClassIndex_ = (createClassIndex_ + 1) % kClassArchetypes.size();
+    } else if (event.key.code == sf::Keyboard::BackSpace) {
+      if (!createCharacterName_.empty()) {
+        createCharacterName_.pop_back();
+      }
+    } else if (event.key.code == sf::Keyboard::Enter) {
+      const std::string finalName = trimName(createCharacterName_);
+      if (finalName.empty()) {
+        statusText_ = "Character name is required";
+        return;
+      }
+      CharacterInfo created;
+      created.id = "local-" + std::to_string(localCharacterCounter_++);
+      created.name = finalName;
+      created.className = kClassArchetypes[createClassIndex_].name;
+      characters_.push_back(created);
+      selectedCharacterIndex_ = characters_.size() - 1;
+      selectedCharacterId_ = created.id;
+      statusText_ = "Character created locally. Press Enter to join.";
+      screen_ = ScreenState::CharacterSelect;
+    } else if (event.key.code == sf::Keyboard::Escape) {
+      statusText_ = "Character creation canceled";
+      screen_ = ScreenState::CharacterSelect;
+    }
+    return;
+  }
+
+  if (event.type == sf::Event::TextEntered) {
+    const auto code = event.text.unicode;
+    if (code >= 32 && code < 127 && createCharacterName_.size() < 16) {
+      createCharacterName_.push_back(static_cast<char>(code));
+    }
   }
 }
 
@@ -333,17 +427,19 @@ void GameClient::submitAuth() {
   
   // Fetch characters from server
   characters_ = authClient_.fetchCharacters(jwt_);
-  if (characters_.empty()) {
-    statusText_ = "No characters found. Create one via API.";
-    return;
-  }
-  selectedCharacterId_ = characters_[0].id;
-  
-  statusText_ = "Select character (Left/Right)";
+  selectedCharacterIndex_ = 0;
+  selectedCharacterId_ = characters_.empty() ? "" : characters_[0].id;
+  statusText_ = characters_.empty() ? "No characters found. Create your first character."
+                                    : "Select character or create a new one";
   screen_ = ScreenState::CharacterSelect;
 }
 
 void GameClient::startWorldSession() {
+  if (characters_.empty() || selectedCharacterIndex_ >= characters_.size()) {
+    statusText_ = "Select a character first";
+    screen_ = ScreenState::CharacterSelect;
+    return;
+  }
   leaveWorldSession();
 
   const CharacterInfo& selected = characters_[selectedCharacterIndex_];
@@ -781,8 +877,10 @@ void GameClient::render() {
     window_.clear(sf::Color(20, 22, 28));
     if (screen_ == ScreenState::Auth) {
       renderAuthScreen();
-    } else {
+    } else if (screen_ == ScreenState::CharacterSelect) {
       renderCharacterSelectScreen();
+    } else {
+      renderCharacterCreateScreen();
     }
   }
   window_.display();
@@ -828,18 +926,195 @@ void GameClient::renderAuthScreen() {
 }
 
 void GameClient::renderCharacterSelectScreen() {
-  drawLabel("Character Selection", 40, 32, 34, sf::Color(130, 210, 255));
-  drawLabel("Left/Right to choose, Enter to join world", 40, 82, 18, sf::Color(180, 185, 200));
+  const sf::Vector2u size = window_.getSize();
+  sf::RectangleShape gradientTop(sf::Vector2f(static_cast<float>(size.x), 180.0f));
+  gradientTop.setPosition(0.0f, 0.0f);
+  gradientTop.setFillColor(sf::Color(30, 36, 52));
+  window_.draw(gradientTop);
 
-  for (std::size_t i = 0; i < characters_.size(); ++i) {
-    const bool selected = i == selectedCharacterIndex_;
-    const std::string display = characters_[i].name + " (" + characters_[i].className + ")";
-    drawLabel(display, 60.0f + static_cast<float>(i) * 220.0f, 180.0f, 30,
-              selected ? sf::Color(245, 205, 120) : sf::Color(210, 210, 220));
+  drawLabel("Character Selection", 44, 30, 36, sf::Color(130, 210, 255));
+  drawLabel("Left/Right to choose, Enter to confirm, Esc back", 44, 84, 18, sf::Color(186, 194, 214));
+
+  const std::size_t optionCount = characters_.size() + 1;
+  const float cardWidth = 240.0f;
+  const float cardHeight = 320.0f;
+  const float gap = 22.0f;
+  const float totalWidth = static_cast<float>(optionCount) * cardWidth + static_cast<float>(optionCount - 1) * gap;
+  const float startX = std::max(30.0f, (static_cast<float>(size.x) - totalWidth) * 0.5f);
+  const float cardY = 170.0f;
+
+  if (selectedCharacterIndex_ >= optionCount) {
+    selectedCharacterIndex_ = 0;
   }
 
-  drawLabel("Authenticated user: " + username_, 40, 280, 20);
-  drawLabel(statusText_, 40, 320, 18, sf::Color(255, 170, 120));
+  for (std::size_t i = 0; i < optionCount; ++i) {
+    const bool selected = i == selectedCharacterIndex_;
+    const bool createCard = i == characters_.size();
+    const float x = startX + static_cast<float>(i) * (cardWidth + gap);
+
+    sf::RectangleShape card(sf::Vector2f(cardWidth, cardHeight));
+    card.setPosition(x, cardY);
+    card.setFillColor(selected ? sf::Color(46, 55, 80) : sf::Color(30, 35, 52));
+    card.setOutlineThickness(selected ? 3.0f : 1.5f);
+    card.setOutlineColor(selected ? sf::Color(245, 205, 120) : sf::Color(80, 92, 126));
+    window_.draw(card);
+
+    if (createCard) {
+      sf::CircleShape marker(12.0f);
+      marker.setPosition(x + cardWidth - 30.0f, cardY + 18.0f);
+      marker.setFillColor(sf::Color(180, 190, 220));
+      window_.draw(marker);
+
+      sf::RectangleShape plusA(sf::Vector2f(80.0f, 10.0f));
+      plusA.setPosition(x + 80.0f, cardY + 100.0f);
+      plusA.setFillColor(sf::Color(180, 190, 220));
+      window_.draw(plusA);
+      sf::RectangleShape plusB(sf::Vector2f(10.0f, 80.0f));
+      plusB.setPosition(x + 115.0f, cardY + 65.0f);
+      plusB.setFillColor(sf::Color(180, 190, 220));
+      window_.draw(plusB);
+
+      drawLabel("Create New", x + 52.0f, cardY + 182.0f, 28, sf::Color(230, 235, 245));
+      drawLabel("Character", x + 62.0f, cardY + 214.0f, 28, sf::Color(230, 235, 245));
+      drawLabel("Start a fresh archetype", x + 28.0f, cardY + 270.0f, 16, sf::Color(166, 176, 200));
+      continue;
+    }
+
+    const CharacterInfo& character = characters_[i];
+    const ClassArchetype& archetype = archetypeFromClassName(character.className);
+
+    sf::RectangleShape previewFrame(sf::Vector2f(180.0f, 118.0f));
+    previewFrame.setPosition(x + 30.0f, cardY + 46.0f);
+    previewFrame.setFillColor(sf::Color(20, 24, 37));
+    previewFrame.setOutlineThickness(2.0f);
+    previewFrame.setOutlineColor(archetype.color);
+    window_.draw(previewFrame);
+
+    sf::CircleShape classMarker(10.0f);
+    classMarker.setPosition(x + cardWidth - 28.0f, cardY + 16.0f);
+    classMarker.setFillColor(archetype.color);
+    window_.draw(classMarker);
+
+    if (archetype.name == std::string("Warrior")) {
+      sf::RectangleShape blade(sf::Vector2f(22.0f, 70.0f));
+      blade.setPosition(x + 108.0f, cardY + 69.0f);
+      blade.setFillColor(archetype.accent);
+      window_.draw(blade);
+      sf::RectangleShape guard(sf::Vector2f(54.0f, 10.0f));
+      guard.setPosition(x + 92.0f, cardY + 122.0f);
+      guard.setFillColor(archetype.color);
+      window_.draw(guard);
+    } else if (archetype.name == std::string("Mage")) {
+      sf::CircleShape orb(32.0f);
+      orb.setPosition(x + 88.0f, cardY + 80.0f);
+      orb.setFillColor(archetype.accent);
+      orb.setOutlineThickness(5.0f);
+      orb.setOutlineColor(archetype.color);
+      window_.draw(orb);
+    } else {
+      sf::ConvexShape diamond(4);
+      diamond.setPoint(0, sf::Vector2f(x + 120.0f, cardY + 66.0f));
+      diamond.setPoint(1, sf::Vector2f(x + 158.0f, cardY + 106.0f));
+      diamond.setPoint(2, sf::Vector2f(x + 120.0f, cardY + 146.0f));
+      diamond.setPoint(3, sf::Vector2f(x + 82.0f, cardY + 106.0f));
+      diamond.setFillColor(archetype.accent);
+      diamond.setOutlineThickness(4.0f);
+      diamond.setOutlineColor(archetype.color);
+      window_.draw(diamond);
+    }
+
+    drawLabel(character.name, x + 22.0f, cardY + 186.0f, 26, sf::Color(235, 238, 245));
+    drawLabel(character.className, x + 22.0f, cardY + 224.0f, 20, archetype.color);
+    drawLabel("Level 1", x + 22.0f, cardY + 254.0f, 20, sf::Color(190, 198, 220));
+    drawLabel(archetype.description, x + 22.0f, cardY + 286.0f, 14, sf::Color(170, 178, 200));
+  }
+
+  drawLabel("Authenticated user: " + username_, 44, static_cast<float>(size.y) - 74.0f, 20, sf::Color(210, 220, 240));
+  drawLabel(statusText_, 44, static_cast<float>(size.y) - 44.0f, 18, sf::Color(255, 176, 132));
+}
+
+void GameClient::renderCharacterCreateScreen() {
+  const sf::Vector2u size = window_.getSize();
+  const ClassArchetype& archetype = kClassArchetypes[createClassIndex_];
+
+  sf::RectangleShape bg(sf::Vector2f(static_cast<float>(size.x), static_cast<float>(size.y)));
+  bg.setPosition(0.0f, 0.0f);
+  bg.setFillColor(sf::Color(22, 27, 42));
+  window_.draw(bg);
+
+  sf::RectangleShape panel(sf::Vector2f(900.0f, 520.0f));
+  panel.setPosition(190.0f, 110.0f);
+  panel.setFillColor(sf::Color(28, 34, 54));
+  panel.setOutlineThickness(2.0f);
+  panel.setOutlineColor(sf::Color(90, 102, 136));
+  window_.draw(panel);
+
+  drawLabel("Create Character", 230, 138, 36, sf::Color(130, 210, 255));
+  drawLabel("Type name, Left/Right selects class, Enter creates, Esc cancels", 230, 188, 18,
+            sf::Color(178, 188, 210));
+
+  sf::RectangleShape nameBox(sf::Vector2f(520.0f, 52.0f));
+  nameBox.setPosition(230.0f, 240.0f);
+  nameBox.setFillColor(sf::Color(18, 22, 35));
+  nameBox.setOutlineThickness(2.0f);
+  nameBox.setOutlineColor(sf::Color(95, 109, 146));
+  window_.draw(nameBox);
+
+  drawLabel("Name: " + createCharacterName_, 246, 253, 24, sf::Color::White);
+
+  sf::RectangleShape classPanel(sf::Vector2f(520.0f, 270.0f));
+  classPanel.setPosition(230.0f, 320.0f);
+  classPanel.setFillColor(sf::Color(20, 25, 39));
+  classPanel.setOutlineThickness(2.0f);
+  classPanel.setOutlineColor(archetype.color);
+  window_.draw(classPanel);
+
+  drawLabel(archetype.name, 250, 340, 34, archetype.color);
+  drawLabel(archetype.description, 250, 388, 18, sf::Color(220, 225, 235));
+  drawLabel(archetype.stats, 250, 422, 18, archetype.accent);
+
+  sf::CircleShape marker(16.0f);
+  marker.setPosition(698.0f, 338.0f);
+  marker.setFillColor(archetype.color);
+  window_.draw(marker);
+
+  sf::RectangleShape previewFrame(sf::Vector2f(220.0f, 220.0f));
+  previewFrame.setPosition(798.0f, 320.0f);
+  previewFrame.setFillColor(sf::Color(18, 24, 36));
+  previewFrame.setOutlineThickness(2.0f);
+  previewFrame.setOutlineColor(archetype.color);
+  window_.draw(previewFrame);
+
+  if (archetype.name == std::string("Warrior")) {
+    sf::RectangleShape blade(sf::Vector2f(28.0f, 110.0f));
+    blade.setPosition(892.0f, 364.0f);
+    blade.setFillColor(archetype.accent);
+    window_.draw(blade);
+    sf::RectangleShape guard(sf::Vector2f(70.0f, 12.0f));
+    guard.setPosition(871.0f, 444.0f);
+    guard.setFillColor(archetype.color);
+    window_.draw(guard);
+  } else if (archetype.name == std::string("Mage")) {
+    sf::CircleShape orb(56.0f);
+    orb.setPosition(850.0f, 372.0f);
+    orb.setFillColor(archetype.accent);
+    orb.setOutlineThickness(7.0f);
+    orb.setOutlineColor(archetype.color);
+    window_.draw(orb);
+  } else {
+    sf::ConvexShape diamond(4);
+    diamond.setPoint(0, sf::Vector2f(908.0f, 360.0f));
+    diamond.setPoint(1, sf::Vector2f(970.0f, 430.0f));
+    diamond.setPoint(2, sf::Vector2f(908.0f, 500.0f));
+    diamond.setPoint(3, sf::Vector2f(846.0f, 430.0f));
+    diamond.setFillColor(archetype.accent);
+    diamond.setOutlineThickness(6.0f);
+    diamond.setOutlineColor(archetype.color);
+    window_.draw(diamond);
+  }
+
+  drawLabel("Class Preview", 830, 548, 18, sf::Color(184, 196, 220));
+  drawLabel(statusText_, 230, 604, 18, sf::Color(255, 176, 132));
 }
 
 void GameClient::renderWorldScreen() {
