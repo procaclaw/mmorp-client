@@ -21,6 +21,7 @@ class Renderer3D {
 
   int viewportWidth_ = 1280;
   int viewportHeight_ = 720;
+  float cameraZoom_ = 0.75f;
   mutable SpriteManager spriteManager_;
   mutable bool spritesInitialized_ = false;
 };

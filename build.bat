@@ -13,15 +13,14 @@ if errorlevel 1 (
 echo.
 echo [2/3] Building...
 if not exist "build" mkdir build
-cd build
-cmake -S . -B . -G "Visual Studio 17 2022" -A Win32
+cmake -S . -B build
 if errorlevel 1 (
     echo ERROR: CMake configuration failed!
     pause
     exit /b 1
 )
 
-cmake --build . -j
+cmake --build build -j
 if errorlevel 1 (
     echo ERROR: Build failed!
     pause

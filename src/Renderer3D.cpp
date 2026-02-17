@@ -39,7 +39,7 @@ void Renderer3D::render(sf::RenderTarget& target, const WorldSnapshot& world, co
   }
 
   sf::View worldView;
-  worldView.setSize(static_cast<float>(viewportWidth_), static_cast<float>(viewportHeight_));
+  worldView.setSize(static_cast<float>(viewportWidth_) * cameraZoom_, static_cast<float>(viewportHeight_) * cameraZoom_);
 
   float localPx = static_cast<float>(world.width * world.tileSize) * 0.5f;
   float localPy = static_cast<float>(world.height * world.tileSize) * 0.5f;
